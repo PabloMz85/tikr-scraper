@@ -10,6 +10,8 @@ import pandas as pd
 
 
 class TIKR:
+    statements_config = []
+
     def __init__(self, test_mode):
         try:
             self.test_mode = test_mode
@@ -95,10 +97,10 @@ class TIKR:
             return
 
         # get all statements data and and config and resdata map
-        statement_data, resdata_map, statements_config = utils.get_statement_mappings(tf_response, dailyv2_response, self.statements)
+        statement_data, resdata_map, self.statements_config = utils.get_statement_mappings(tf_response, dailyv2_response, self.statements)
 
         resolved_key_lookup = {
-            cfg['statement']: cfg['resolved_keys'] for cfg in statements_config
+            cfg['statement']: cfg['resolved_keys'] for cfg in self.statements_config
         }
 
         income_statement_map = statement_data.get('income_statement', {})
@@ -107,7 +109,7 @@ class TIKR:
         for period_key in period_keys:
             period_info = period_lookup.get(period_key, {})
             year = period_info.get('calendaryear')
-            for statement_cfg in statements_config:
+            for statement_cfg in self.statements_config:
                 statement_name = statement_cfg['statement']
                 line_map = statement_data.get(statement_name, {})
                 resolved_keys = statement_cfg['resolved_keys']
@@ -359,3 +361,92 @@ class TIKR:
             exported_files = ['database']
 
         return exported_files
+
+    def edit_excel_file(self, filepath: str, asset: str):
+        """Apply formatting to the exported Excel file."""
+        if not os.path.isfile(filepath):
+            print(f'[ - ] File not found: {filepath}')
+            return
+
+        sheets_names = {
+            'income_statement': '7.TIKR_IS',
+            'balancesheet_statement': '8.TIKR_BS',
+            'cashflow_statement': '9.TIKR_CF',
+            'multiples_statement': '10.TIKR_Val',
+        }
+
+        sheets_titles = {
+            'income_statement': 'Income Statement',
+            'balancesheet_statement': 'Balance Sheet Statement',
+            'cashflow_statement': 'Cash Flow Statement',
+            'multiples_statement': 'Multiples',
+        }
+
+        try:
+            for statement in self.statements_config:
+                statement_name = statement['statement']
+                rows = self.content.get(statement_name, [])
+
+                if not rows:
+                    print(f'[ - ] No data found for statement: {statement_name}')
+                    return
+
+                columns = []
+                # Map columns using statements_config if available
+                config_keys = statement.get('keys')
+                for col in list(rows[0].keys()):
+                    new_col = config_keys.get(col, col)
+                    if (col == 'market_cap'):
+                        new_col = 'Market Cap'
+                    elif (col == 'price_close'):
+                        new_col = 'Price Close'
+                    elif (col == 'TEV'):
+                        new_col = 'TEV'
+                    elif (col == 'company'):
+                        new_col = ''
+                    elif (col == 'year'):
+                        continue  # Skip 'year' column as it's used for index
+                    columns.append(new_col)
+
+                # Remove 'company' key and change the keys, by switching them with the values on statements_config for each row
+                new_rows = []
+                for row in rows:
+                    new_row = {}
+                    for key, value in row.items():
+                        if (key == 'market_cap'):
+                            new_row['Market Cap'] = value
+                        elif (key == 'price_close'):
+                            new_row['Price Close'] = value
+                        elif (key == 'TEV'):
+                            new_row['TEV'] = value
+                        elif (key == 'company'):
+                            new_row[''] = ''
+                        else:
+                            new_row[config_keys.get(key, key)] = value
+                    new_rows.append(new_row)
+
+                years = [row['year'] for row in new_rows]
+                if years:
+                    formatted_years = []
+                    for i, y in enumerate(years):
+                        if i == len(years) - 1:  # last item is LTM
+                            formatted_years.append('LTM')
+                        else:
+                            formatted_years.append(f"12/31/{str(y)[-2:]}")  #  convert to MM/DD/YY format
+                    years = formatted_years
+
+                df = pd.DataFrame(new_rows, columns=columns, index=years)
+                df_transposed = df.T
+
+                # Cargar el workbook existente
+                with pd.ExcelWriter(filepath, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                    sheets_name = sheets_names.get(statement_name, statement_name)
+                    df_transposed.to_excel(writer, sheet_name=sheets_name)
+
+                    worksheet = writer.sheets[sheets_name]
+                    worksheet["A1"] = sheets_titles.get(statement_name, statement_name)
+
+                print(f'[ + ] Edited Excel file saved: {filepath}')
+
+        except Exception as e:
+            print(f'[ - ] Error editing Excel file: {e}')
