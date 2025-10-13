@@ -12,7 +12,7 @@ import pandas as pd
 class TIKR:
     statements_config = []
 
-    def __init__(self, test_mode):
+    def __init__(self, test_mode=0):
         try:
             self.test_mode = test_mode
         except KeyError:
@@ -362,7 +362,7 @@ class TIKR:
 
         return exported_files
 
-    def edit_excel_file(self, filepath: str, asset: str):
+    def edit_excel_file(self, filepath: str):
         """Apply formatting to the exported Excel file."""
         if not os.path.isfile(filepath):
             print(f'[ - ] File not found: {filepath}')
