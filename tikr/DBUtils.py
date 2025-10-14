@@ -7,7 +7,7 @@ import json
 from typing import List
 
 python_path = './'
-db_path = './data/chatsDB.db'
+db_path = './data/tikrDB.db'
 
 def create_database() -> None:
     """
@@ -25,7 +25,7 @@ def create_database() -> None:
         CREATE TABLE IF NOT EXISTS income_statement (
         company TEXT,
         year INTEGER,
-        revenues TEXT,
+        revenues float,
         total_revenues float,
         total_revenues_yoy float,
         cost_of_goods_sold float,
@@ -80,7 +80,8 @@ def create_database() -> None:
         effective_tax_rate float,
         market_cap float,
         price_close float,
-        TEV float
+        TEV float,
+        PRIMARY KEY (company, year)
         );
     ''')
 
@@ -134,7 +135,8 @@ def create_database() -> None:
         cash_and_cash_equivalents_end_of_period float,
         cash_interest_paid float,
         cash_taxes_paid float,
-        cash_flow_per_share float
+        cash_flow_per_share float,
+        PRIMARY KEY (company, year)
         );
     ''')
 
@@ -205,7 +207,8 @@ def create_database() -> None:
         land float,
         buildings float,
         construction_in_progress float,
-        full_time_employees float
+        full_time_employees float,
+        PRIMARY KEY (company, year)
         );
     ''')
 
@@ -270,24 +273,45 @@ def create_database() -> None:
         ltm_dividend_per_share float,
         ltm_unlevered_free_cash_flow float,
         ltm_levered_free_cash_flow float,
-        ltm_net_current_asset_value_per_share float
+        ltm_net_current_asset_value_per_share float,
+        PRIMARY KEY (company, year)
         );
     ''')
 
     # Close the connection
     conn.close()
 
-def insert_data(table: str, data: List[dict]) -> None:
+def insert_or_update_data(table: str, data: List[dict]) -> None:
     """
-    Insert data into the specified table.
+    Inserta o actualiza registros en la tabla especificada.
+    Usa 'ON CONFLICT(company, year)' para hacer UPSERT automático.
     """
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
     for record in data:
-        placeholders = ', '.join(['?'] * len(record))
+        company = record.get("company")
+        year = record.get("year")
+
+        if not company or not year:
+            print(f"Registro sin company o year: {record}")
+            continue
+
+        # Generar dinámicamente los nombres de columnas
         columns = ', '.join(record.keys())
-        sql = f'INSERT INTO {table} ({columns}) VALUES ({placeholders})'
+        placeholders = ', '.join(['?'] * len(record))
+
+        # Construir parte del UPDATE dinámico (sin company/year)
+        update_clause = ', '.join([f"{col}=excluded.{col}" for col in record.keys() if col not in ("company", "year")])
+
+        # UPSERT automático: si ya existe (company, year), actualiza solo las columnas
+        sql = f"""
+            INSERT INTO {table} ({columns})
+            VALUES ({placeholders})
+            ON CONFLICT(company, year) DO UPDATE SET
+            {update_clause};
+        """
+
         cursor.execute(sql, list(record.values()))
 
     conn.commit()
