@@ -1,5 +1,5 @@
 from .utils import scraper_utils as utils
-from tikr.DBUtils import insert_data
+from tikr.DBUtils import insert_or_update_data
 
 from datetime import datetime
 import json
@@ -356,13 +356,13 @@ class TIKR:
                 if not rows:
                     continue
 
-                insert_data(statement_name, rows)
+                insert_or_update_data(statement_name, rows)
             print(f'[ + ] Data inserted into the database successfully.')
             exported_files = ['database']
 
         return exported_files
 
-    def edit_excel_file(self, filepath: str):
+    def edit_excel_file(self, filepath: str, tid: int, cid: int):
         """Apply formatting to the exported Excel file."""
         if not os.path.isfile(filepath):
             print(f'[ - ] File not found: {filepath}')
@@ -381,6 +381,14 @@ class TIKR:
             'cashflow_statement': 'Cash Flow Statement',
             'multiples_statement': 'Multiples',
         }
+
+        last_quote = utils.get_last_quote_data(self.access_token, self.headers, tid, cid, self.test_mode)
+        if last_quote:
+            last_price = last_quote.get('last')[0].get('latestPrice', '')
+            if last_price != '':
+                last_price = round(float(last_price), 2)
+        else:
+            last_price = ''
 
         try:
             for statement in self.statements_config:
@@ -445,6 +453,9 @@ class TIKR:
 
                     worksheet = writer.sheets[sheets_name]
                     worksheet["A1"] = sheets_titles.get(statement_name, statement_name)
+
+                    worksheet = writer.sheets['4.Valoracion']
+                    worksheet["B19"] = last_price
 
                 print(f'[ + ] Edited Excel file saved: {filepath}')
 
