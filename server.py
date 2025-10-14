@@ -1,10 +1,16 @@
 from flask import Flask, request, send_file, jsonify
 from tikr.scraper import TIKR  # importa tu clase principal
+from tikr.DBUtils import create_database
+
 import os
 import shutil
 import tempfile
 
 app = Flask(__name__)
+test_mode = int(os.environ.get('TIKR_TEST_MODE'))
+edit_file = int(os.environ.get('TIKR_EDIT_FILE'))
+
+create_database()
 
 @app.route("/get", methods=["GET"])
 def scrape():
@@ -22,8 +28,13 @@ def scrape():
         shutil.copy("Plantilla_TIKR.xlsx", temp_file_path)
 
         # Ejecutar tu scraper (ajustá según cómo se llame tu método principal)
-        scraper = TIKR()
-        tid, cid = scraper.find_company_info(ticker)
+        scraper = TIKR(test_mode)
+
+        if test_mode == 0:
+            tid, cid = scraper.find_company_info(ticker)
+        else:
+            tid, cid = 2590360, 24937  # Apple Inc.
+    
         if not (tid and cid):
             return jsonify({"error": "Could not find company"}), 404
         
@@ -32,7 +43,7 @@ def scrape():
         if not exported_files:
             return jsonify({"error": "No files exported"}), 500
         
-        scraper.edit_excel_file(temp_file_path)
+        scraper.edit_excel_file(temp_file_path, tid, cid)
 
         # Enviar el archivo como descarga
         return send_file(temp_file_path, as_attachment=True, download_name=f"Plantilla_TIKR_{ticker}.xlsx")

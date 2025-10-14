@@ -9,10 +9,10 @@ create_database()
 
 def main():
     """Command line entry point for the scraper."""
-    test_mode = os.environ.get('TIKR_TEST_MODE')
-    edit_file = os.environ.get('TIKR_EDIT_FILE')
+    test_mode = int(os.environ.get('TIKR_TEST_MODE'))
+    edit_file = int(os.environ.get('TIKR_EDIT_FILE'))
 
-    if test_mode and test_mode == '1':
+    if test_mode == 1:
         print(f'[ ! ] {bcolors.WARNING}Running in TEST MODE{bcolors.ENDC}')
     else:
         test_mode = 0
@@ -55,9 +55,9 @@ def main():
     else:
         print(f'[ - ] {bcolors.FAIL}No files exported{bcolors.ENDC}')
     
-    if edit_file and edit_file == '1':
+    if edit_file == 1:
         print(f'Edit the Excel file')
-        scraper.edit_excel_file('Plantilla_TIKR.xlsx', asset)
+        scraper.edit_excel_file('Plantilla_TIKR.xlsx', tid, cid)
 
     print('[ . ] Done')
 
