@@ -110,6 +110,24 @@ class scraper_utils:
             with open('./tests/AAPL_daily_v2.json', 'r') as f:
                 return json.load(f)
     
+    def get_last_quote_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
+        if test_mode == 0:
+            url = 'https://api.tikr.com/lastquote_it'
+            payload = json.dumps({
+                "auth": access_token,
+                "ids": [
+                    {
+                        "cid": cid,
+                        "tid": tid
+                    }
+                ]
+            })
+            response = requests.post(url, headers=headers, data=payload)
+            return response.json()
+        else:
+            with open('./tests/AAPL_lastquote_it.json', 'r') as f:
+                return json.load(f)
+    
     ################################################
     # Functions to extract specific data from dailyv2 response
     ################################################
