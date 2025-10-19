@@ -30,18 +30,35 @@ class scraper_utils:
     # Functions to get data from TIKR API or from local test files
     #################################################################
 
+    def create_driver():
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")               # Obligatorio en Docker
+        chrome_options.add_argument("--disable-dev-shm-usage")    # Evita problemas de memoria compartida
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("window-size=1920,1080")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+
+        # User agent opcional
+        user_agent = ('Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) '
+                    'Chrome/22.0.1216.0 Safari/537.2')
+        chrome_options.add_argument(f'user-agent={user_agent}')
+
+        # Detecta si estamos en Docker y usar Chromium si está disponible
+        chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
+        if os.path.exists(chrome_bin):
+            chrome_options.binary_location = chrome_bin
+
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+
     def get_access_token() -> str:
         username = os.environ['TIKR_ACCOUNT_USERNAME']
         password = os.environ['TIKR_ACCOUNT_PASSWORD']
         
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        user_agent = ('Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) '
-                      'Chrome/22.0.1216.0 Safari/537.2')
-        chrome_options.add_argument(f'user-agent={user_agent}')
-        chrome_options.add_argument('window-size=1920x1080')
-        s = Service(ChromeDriverManager().install())
-        browser = webdriver.Chrome(service=s, options=chrome_options)
+        browser = scraper_utils.create_driver()
         browser.get('https://app.tikr.com/login')
         browser.find_element(By.XPATH, '//input[@type="email"]').send_keys(username)
         browser.find_element(By.XPATH, '//input[@type="password"]').send_keys(password)
@@ -76,6 +93,22 @@ class scraper_utils:
         
         browser.close()
         return access_token
+    
+    def get_est_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
+        if test_mode == 0:
+            url = 'https://api.tikr.com/est'
+            payload = json.dumps({
+                "auth": access_token,
+                "tid": tid,
+                "cid": cid,
+                "p": "1",
+                "v": "v1"
+            })
+            response = requests.post(url, headers=headers, data=payload)
+            return response.json()
+        else:
+            with open('./tests/AAPL_est.json', 'r') as f:
+                return json.load(f)
     
     def get_tf_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
         if test_mode == 0:
@@ -132,11 +165,26 @@ class scraper_utils:
     # Functions to extract specific data from dailyv2 response
     ################################################
 
+    def get_period_end_dates(est_response) -> list:
+        period_end_dates = {}
+        dates = est_response.get('dates', [])
+        for period in dates:
+            fiscal_year = period.get('fiscalyear')
+            if fiscal_year not in period_end_dates:
+                try:
+                    period_end_date = period.get('periodenddate')
+                    date_obj = datetime.fromisoformat(period_end_date.replace("Z", ""))
+                    period_end_dates[fiscal_year] = date_obj
+                except ValueError:
+                    continue
+        return period_end_dates
+    
+
     ################################################################
     # Extract December values from a given category and item name
     ################################################################
 
-    def get_december_data_from(category: str, item_name: str, dailyv2_response) -> dict:
+    def get_end_period_data_from(category: str, item_name: str, dailyv2_response, period_end_dates: list) -> dict:
         multiples = dailyv2_response.get('cTblDataObj', {}).get(category, [])
         items = next(
             (item for item in multiples if item.get('name') == item_name),
@@ -145,38 +193,41 @@ class scraper_utils:
         
         data = items.get("data", {})
 
-        december_values = {}
+        end_periods_values = {}
         current_year = datetime.now().year
         last_month_current_year = 0
         last_value_current_year = ''
         for k, v in data.items():
             # Parse the ISO date (removing the trailing Z)
             dt = datetime.fromisoformat(k.replace("Z", ""))
-            if dt.month == 12:
-                december_values[dt.year] = v.get("v")
+            year = dt.year
+            
+            if dt.year == current_year:
+                if dt.month > last_month_current_year:
+                    last_month_current_year = dt.month
+                    last_value_current_year = v.get("v")
             else:
-                if dt.year == current_year:
-                    if dt.month > last_month_current_year:
-                        last_month_current_year = dt.month
-                        last_value_current_year = v.get("v")
+                period_end_date = period_end_dates.get(year)
+                if period_end_date and dt.month == period_end_date.month:
+                    end_periods_values[year] = v.get("v")
 
         # If we didn't find a December value for the current year, use the last available month
-        if current_year not in december_values and last_month_current_year > 0:
-            december_values[current_year] = last_value_current_year
+        if current_year not in end_periods_values and last_month_current_year > 0:
+            end_periods_values[current_year] = last_value_current_year
         
         # Sort by year
-        december_values = dict(sorted(december_values.items()))
+        end_periods_values = dict(sorted(end_periods_values.items()))
 
-        return december_values
+        return end_periods_values
     
-    def get_market_cap_data(dailyv2_response) -> dict:
-        return scraper_utils.get_december_data_from('Multiples', 'Market Cap (MM)', dailyv2_response)
+    def get_market_cap_data(dailyv2_response, period_end_dates: list) -> dict:
+        return scraper_utils.get_end_period_data_from('Multiples', 'Market Cap (MM)', dailyv2_response, period_end_dates)
     
-    def get_price_close_data(dailyv2_response) -> dict:
-        return scraper_utils.get_december_data_from('Street Targets', 'Price Close', dailyv2_response)
+    def get_price_close_data(dailyv2_response, period_end_dates: list) -> dict:
+        return scraper_utils.get_end_period_data_from('Street Targets', 'Price Close', dailyv2_response, period_end_dates)
     
-    def get_TEV_data(dailyv2_response) -> dict:
-        return scraper_utils.get_december_data_from('Multiples', 'Total Enterprise Value (MM)', dailyv2_response)
+    def get_TEV_data(dailyv2_response, period_end_dates: list) -> dict:
+        return scraper_utils.get_end_period_data_from('Multiples', 'Total Enterprise Value (MM)', dailyv2_response, period_end_dates)
 
     ###############################################################
     # End of December extraction functions
@@ -279,7 +330,7 @@ class scraper_utils:
 
         return period_keys, period_lookup
 
-    def get_statement_mappings(tf_response, dailyv2_response, statements):
+    def get_statement_mappings(tf_response, dailyv2_response, statements, period_end_dates):
         # Map the API response blocks to the statements we care about
         statement_indices = {
             'income_statement': 0,
@@ -313,7 +364,7 @@ class scraper_utils:
             statement_name_index[statement_name] = name_index
             statement_name_list[statement_name] = names_list
         
-        def get_multiples_map(dailyv2_response):
+        def get_multiples_map():
             # Extract and index the multiples from dailyv2 response
             multiples = dailyv2_response.get('cTblDataObj', {}).get('Multiples', [])
 
@@ -331,7 +382,7 @@ class scraper_utils:
                     name_index[normalized] = id
                 
                 # For multiples, we want to replace the data with December values
-                december_date = scraper_utils.get_december_data_from('Multiples', name, dailyv2_response)
+                december_date = scraper_utils.get_end_period_data_from('Multiples', name, dailyv2_response, period_end_dates)
                 if december_date:
                     multiple['data'] = december_date
                 multiple_map[id] = multiple
@@ -343,7 +394,7 @@ class scraper_utils:
             statement_name_list['multiples_statement'] = names_list
 
         # Add multiples to the statement data for reference
-        get_multiples_map(dailyv2_response)
+        get_multiples_map()
 
         resdata_map = {}
         resdata_name_index = {}

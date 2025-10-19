@@ -11,6 +11,7 @@ import pandas as pd
 
 class TIKR:
     statements_config = []
+    period_end_dates = {}
 
     def __init__(self, test_mode=0):
         try:
@@ -66,7 +67,6 @@ class TIKR:
     def get_financials(self, asset: str, tid: int, cid: int):
         while True:
             tf_response = utils.get_tf_data(self.access_token, self.headers, tid, cid, self.test_mode)
-            dailyv2_response = utils.get_dailyv2_data(self.access_token, self.headers, tid, cid, self.test_mode)
 
             if 'dates' not in tf_response or 'financials' not in tf_response:
                 print('[ + ] Generating Access Token...')
@@ -75,10 +75,16 @@ class TIKR:
                 break
         
         print('[ + ] Successfully retrieved data from TIKR API')
+
+        est_response = utils.get_est_data(self.access_token, self.headers, tid, cid, self.test_mode)
+        self.period_end_dates = utils.get_period_end_dates(est_response)
+        est_response = None  # Free memory
+
+        dailyv2_response = utils.get_dailyv2_data(self.access_token, self.headers, tid, cid, self.test_mode)
         
-        marketcap_data = utils.get_market_cap_data(dailyv2_response)
-        price_close_data = utils.get_price_close_data(dailyv2_response)
-        tev_data = utils.get_TEV_data(dailyv2_response)
+        marketcap_data = utils.get_market_cap_data(dailyv2_response, self.period_end_dates)
+        price_close_data = utils.get_price_close_data(dailyv2_response, self.period_end_dates)
+        tev_data = utils.get_TEV_data(dailyv2_response, self.period_end_dates)
 
         # Reset previously cached content before loading new data
         self.content = {
@@ -97,7 +103,7 @@ class TIKR:
             return
 
         # get all statements data and and config and resdata map
-        statement_data, resdata_map, self.statements_config = utils.get_statement_mappings(tf_response, dailyv2_response, self.statements)
+        statement_data, resdata_map, self.statements_config = utils.get_statement_mappings(tf_response, dailyv2_response, self.statements, self.period_end_dates)
 
         resolved_key_lookup = {
             cfg['statement']: cfg['resolved_keys'] for cfg in self.statements_config
@@ -440,7 +446,10 @@ class TIKR:
                         if i == len(years) - 1:  # last item is LTM
                             formatted_years.append('LTM')
                         else:
-                            formatted_years.append(f"12/31/{str(y)[-2:]}")  #  convert to MM/DD/YY format
+                            # formatted_years.append(f"12/31/{str(y)[-2:]}")  #  convert to MM/DD/YY format
+                            end_period_date = self.period_end_dates.get(y, str(y))
+                            period_str = end_period_date.strftime('%m/%d/%y')
+                            formatted_years.append(period_str)  # use actual period end date if available
                     years = formatted_years
 
                 df = pd.DataFrame(new_rows, columns=columns, index=years)
