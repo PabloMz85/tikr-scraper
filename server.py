@@ -5,6 +5,32 @@ from tikr.DBUtils import create_database
 import os
 import shutil
 import tempfile
+import sys
+
+defaults = {
+    "TIKR_TEST_MODE": 0,
+    "TIKR_EDIT_FILE": 1,
+    "TIKR_EXPORT_FORMAT": "db",
+    "TIKR_EXPORT_YEARS": "10",
+}
+
+for key, default in defaults.items():
+    os.environ.setdefault(key, default)
+
+REQUIRED_ENV_VARS = [
+    "TIKR_ACCOUNT_USERNAME",
+    "TIKR_ACCOUNT_PASSWORD",
+    "TIKR_TEST_MODE",
+    "TIKR_EDIT_FILE",
+    "TIKR_EXPORT_FORMAT",
+    "TIKR_EXPORT_YEARS",
+]
+
+missing = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+if missing:
+    print(f"❌ Error: faltan variables de entorno requeridas: {', '.join(missing)}")
+    sys.exit(1)
+
 
 app = Flask(__name__)
 test_mode = int(os.environ.get('TIKR_TEST_MODE'))
@@ -53,5 +79,6 @@ def scrape():
 
 
 if __name__ == "__main__":
-    # Modo debug = True para desarrollo
-    app.run(host="0.0.0.0", port=5555, debug=True)
+    port = int(os.getenv("PORT", 5555))
+    print(f"✅ Servidor Flask iniciado en http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
