@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 
 from tikr.DBUtils import create_database
 from tikr.scraper import TIKR
@@ -56,8 +57,22 @@ def main():
         print(f'[ - ] {bcolors.FAIL}No files exported{bcolors.ENDC}')
     
     if edit_file == 1:
+        # Identificar la industria para saber que plantilla usar
+        industry = scraper.get_industry(tid, cid)
+        print(f'Identified industry: {industry}')
+        plantilla = 'IDC'
+        # Seleccionar plantilla según industria
+        if ('Financial' in industry) or ('Bank' in industry) or ('Capital Markets' in industry) or ('Finance' in industry) or ('Insurance' in industry) or ('Mortgage' in industry):
+            plantilla = 'Financiera'
+            print(f'Using Financial Industry template because: ' + industry)
+        elif ('REITs' in industry):
+            plantilla = 'REITs'
+            print(f'Using REITs Industry template because: ' + industry)
+        
         print(f'Edit the Excel file')
-        scraper.edit_excel_file('Plantilla_TIKR.xlsx', tid, cid)
+        # Copiar plantilla a archivo temporal
+        shutil.copy(f"plantillas/Plantilla_TIKR_{plantilla}.xlsx", f"plantillas/Plantilla_TIKR_{plantilla}_{asset}.xlsx")
+        scraper.edit_excel_file(f"plantillas/Plantilla_TIKR_{plantilla}.xlsx", tid, cid)
 
     print('[ . ] Done')
 

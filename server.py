@@ -50,9 +50,6 @@ def scrape():
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
             temp_file_path = tmp.name
 
-        # Copiar plantilla a archivo temporal
-        shutil.copy("Plantilla_TIKR.xlsx", temp_file_path)
-
         # Ejecutar tu scraper (ajustá según cómo se llame tu método principal)
         scraper = TIKR(test_mode)
 
@@ -69,7 +66,23 @@ def scrape():
         if not exported_files:
             return jsonify({"error": "No files exported"}), 500
         
-        scraper.edit_excel_file(temp_file_path, tid, cid)
+        # Identificar la industria para saber que plantilla usar
+        industry = scraper.get_industry(tid, cid)
+        print(f'Identified industry: {industry}')
+        plantilla = 'IDC'
+        # Seleccionar plantilla según industria
+        if ('Financial' in industry) or ('Bank' in industry) or ('Capital Markets' in industry) or ('Finance' in industry) or ('Insurance' in industry) or ('Mortgage' in industry):
+            plantilla = 'Financiera'
+            print(f'Using Financial Industry template because: ' + industry)
+        elif ('REITs' in industry):
+            plantilla = 'REITs'
+            print(f'Using REITs Industry template because: ' + industry)
+        
+        print(f'Edit the Excel file')
+
+        # Copiar plantilla a archivo temporal
+        shutil.copy(f"plantillas/Plantilla_TIKR_{plantilla}.xlsx", temp_file_path)
+        scraper.edit_excel_file(temp_file_path, tid, cid, plantilla)
 
         # Enviar el archivo como descarga
         return send_file(temp_file_path, as_attachment=True, download_name=f"Plantilla_TIKR_{ticker}.xlsx")

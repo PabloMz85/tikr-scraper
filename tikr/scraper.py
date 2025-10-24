@@ -271,6 +271,11 @@ class TIKR:
                         else:
                             fiscalyear[column] = ''
 
+    def get_industry(self, tid: int, cid: int):
+        company_info = utils.get_tibobj_data(self.access_token, self.headers, tid, cid, self.test_mode)
+        industry = company_info.get('data', {}).get('simpleindustrydescription', '')
+        return industry
+
     def export(self, asset: str):
         export_format = os.environ.get('TIKR_EXPORT_FORMAT', 'xlsx').lower()
         valid_formats = {'xlsx', 'csv', 'json', 'parquet', 'db'}
@@ -368,7 +373,7 @@ class TIKR:
 
         return exported_files
 
-    def edit_excel_file(self, filepath: str, tid: int, cid: int):
+    def edit_excel_file(self, filepath: str, tid: int, cid: int, tipo_compania: str):
         """Apply formatting to the exported Excel file."""
         if not os.path.isfile(filepath):
             print(f'[ - ] File not found: {filepath}')
@@ -399,6 +404,11 @@ class TIKR:
         try:
             for statement in self.statements_config:
                 statement_name = statement['statement']
+                sheets_name = sheets_names.get(statement_name, statement_name)
+                # Solo procesar multiples_statement para companias IDC
+                if (statement_name == 'multiples_statement' and tipo_compania != 'IDC'):
+                    continue
+
                 rows = self.content.get(statement_name, [])
 
                 if not rows:
@@ -446,10 +456,13 @@ class TIKR:
                         if i == len(years) - 1:  # last item is LTM
                             formatted_years.append('LTM')
                         else:
-                            # formatted_years.append(f"12/31/{str(y)[-2:]}")  #  convert to MM/DD/YY format
-                            end_period_date = self.period_end_dates.get(y, str(y))
-                            period_str = end_period_date.strftime('%m/%d/%y')
-                            formatted_years.append(period_str)  # use actual period end date if available
+                            if statement_name == 'multiples_statement':
+                                december_date = '12/31/' + str(y-2000)
+                                period_str = december_date
+                            else:
+                                end_period_date = self.period_end_dates.get(y, str(y))
+                                period_str = end_period_date.strftime('%m/%d/%y')
+                            formatted_years.append(period_str)
                     years = formatted_years
 
                 df = pd.DataFrame(new_rows, columns=columns, index=years)
@@ -457,14 +470,19 @@ class TIKR:
 
                 # Cargar el workbook existente
                 with pd.ExcelWriter(filepath, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                    sheets_name = sheets_names.get(statement_name, statement_name)
                     df_transposed.to_excel(writer, sheet_name=sheets_name)
 
                     worksheet = writer.sheets[sheets_name]
                     worksheet["A1"] = sheets_titles.get(statement_name, statement_name)
 
                     worksheet = writer.sheets['4.Valoracion']
-                    worksheet["B19"] = last_price
+                    if (tipo_compania == 'IDC'):
+                        celda = "B19"
+                    elif (tipo_compania == 'Financiera'):
+                        celda = "D7"
+                    else:
+                        celda = "D8"
+                    worksheet[celda] = last_price
 
                 print(f'[ + ] Edited Excel file saved: {filepath}')
 

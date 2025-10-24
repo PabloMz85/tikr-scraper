@@ -110,6 +110,21 @@ class scraper_utils:
             with open('./tests/AAPL_est.json', 'r') as f:
                 return json.load(f)
     
+    def get_tibobj_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
+        if test_mode == 0:
+            url = 'https://api.tikr.com/tidobj'
+            payload = json.dumps({
+                "auth": access_token,
+                "tid": tid,
+                "cid": cid,
+                "v": "v0"
+            })
+            response = requests.post(url, headers=headers, data=payload)
+            return response.json()
+        else:
+            with open('./tests/AAPL_tidobj.json', 'r') as f:
+                return json.load(f)
+            
     def get_tf_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
         if test_mode == 0:
             url = 'https://api.tikr.com/tf'
@@ -181,7 +196,7 @@ class scraper_utils:
     
 
     ################################################################
-    # Extract December values from a given category and item name
+    # Extract End period values from a given category and item name
     ################################################################
 
     def get_end_period_data_from(category: str, item_name: str, dailyv2_response, period_end_dates: list) -> dict:
@@ -211,7 +226,7 @@ class scraper_utils:
                 if period_end_date and dt.month == period_end_date.month:
                     end_periods_values[year] = v.get("v")
 
-        # If we didn't find a December value for the current year, use the last available month
+        # If we didn't find a end period value for the current year, use the last available month
         if current_year not in end_periods_values and last_month_current_year > 0:
             end_periods_values[current_year] = last_value_current_year
         
@@ -230,7 +245,48 @@ class scraper_utils:
         return scraper_utils.get_end_period_data_from('Multiples', 'Total Enterprise Value (MM)', dailyv2_response, period_end_dates)
 
     ###############################################################
-    # End of December extraction functions
+    # End of End period extraction functions
+    ###############################################################
+
+    ################################################################
+    # Extract December values from a given category and item name
+    ################################################################
+
+    def get_december_data_from(category: str, item_name: str, dailyv2_response) -> dict:
+        multiples = dailyv2_response.get('cTblDataObj', {}).get(category, [])
+        items = next(
+            (item for item in multiples if item.get('name') == item_name),
+            None  # default value if not found
+        )
+        
+        data = items.get("data", {})
+
+        december_values = {}
+        current_year = datetime.now().year
+        last_month_current_year = 0
+        last_value_current_year = ''
+        for k, v in data.items():
+            # Parse the ISO date (removing the trailing Z)
+            dt = datetime.fromisoformat(k.replace("Z", ""))
+            if dt.month == 12:
+                december_values[dt.year] = v.get("v")
+            else:
+                if dt.year == current_year:
+                    if dt.month > last_month_current_year:
+                        last_month_current_year = dt.month
+                        last_value_current_year = v.get("v")
+
+        # If we didn't find a December value for the current year, use the last available month
+        if current_year not in december_values and last_month_current_year > 0:
+            december_values[current_year] = last_value_current_year
+        
+        # Sort by year
+        december_values = dict(sorted(december_values.items()))
+
+        return december_values
+
+    ###############################################################
+    # End of December extraction function
     ###############################################################
 
     def normalize_label(label):
@@ -381,8 +437,8 @@ class scraper_utils:
                 if normalized and normalized not in name_index:
                     name_index[normalized] = id
                 
-                # For multiples, we want to replace the data with December values
-                december_date = scraper_utils.get_end_period_data_from('Multiples', name, dailyv2_response, period_end_dates)
+                # For multiples, we want to replace the data with december values
+                december_date = scraper_utils.get_december_data_from('Multiples', name, dailyv2_response)
                 if december_date:
                     multiple['data'] = december_date
                 multiple_map[id] = multiple

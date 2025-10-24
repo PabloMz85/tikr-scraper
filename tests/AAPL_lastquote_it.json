@@ -5,12 +5,12 @@
             "companyName": "Apple Inc.",
             "cid": 24937,
             "tid": 2590360,
-            "latestPrice": 247.6,
-            "previousClose": 247.66,
-            "change": -0.06,
-            "changePercent": -0.00024226762496971655,
-            "latestUpdate": 1760460085208,
-            "latestSource": "cboe_one_delayed",
+            "latestPrice": 259.75,
+            "previousClose": 258.45,
+            "change": 1.3,
+            "changePercent": 0.005029986457728768,
+            "latestUpdate": 1761240360001,
+            "latestSource": "iex_delayed",
             "fc": false
         }
     ]
