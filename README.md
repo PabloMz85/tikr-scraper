@@ -46,6 +46,42 @@ A Python utility for downloading historical financial statements from [TIKR](htt
 
 ## Usage
 
+### API (Flask server)
+
+The server exposes a POST endpoint at `/get` to generate and download the Excel template populated with TIKR data.
+
+- Endpoint: `POST /get`
+- Content-Type: `application/json` or `application/x-www-form-urlencoded`
+- Request body fields:
+  - `asset` (required): Ticker or company name, e.g., `AAPL`
+  - `token` (optional): Authentication token if needed
+
+Example (JSON):
+```bash
+curl -X POST "http://localhost:5050/get" \
+  -H "Content-Type: application/json" \
+  -d '{"asset":"AAPL","token":"YOUR_TOKEN_IF_NEEDED"}' \
+  -o "Plantilla_TIKR_AAPL.xlsx"
+```
+
+Example (Form-Data):
+```bash
+curl -X POST "http://localhost:5050/get" \
+  -F "asset=AAPL" \
+  -F "token=YOUR_TOKEN_IF_NEEDED" \
+  -o "Plantilla_TIKR_AAPL.xlsx"
+```
+
+Response:
+- On success: Excel file download (attachment) named `Plantilla_TIKR_<ASSET>.xlsx`
+- On error: JSON with `error` message and appropriate HTTP status code
+
+To run the server:
+```bash
+python server.py
+# ✅ Servidor Flask iniciado en http://0.0.0.0:5050
+```
+
 ### Basic Usage
 
 Run the scraper with a ticker symbol or company name:

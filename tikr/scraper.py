@@ -13,9 +13,10 @@ class TIKR:
     statements_config = []
     period_end_dates = {}
 
-    def __init__(self, test_mode=0):
+    def __init__(self, test_mode=0, production_mode=0):
         try:
             self.test_mode = test_mode
+            self.production_mode = production_mode
         except KeyError:
             raise
 
@@ -47,6 +48,12 @@ class TIKR:
         else:
             self.access_token = ''
 
+    def set_token(self, token: str):
+        if self.production_mode == 0:
+            print('[ - ] Production mode is not enabled; token be set later.')
+            return
+        self.access_token = token
+    
     def find_company_info(self, ticker):
         headers = self.headers.copy()
         headers['content-type'] = 'application/x-www-form-urlencoded'
@@ -69,6 +76,10 @@ class TIKR:
             tf_response = utils.get_tf_data(self.access_token, self.headers, tid, cid, self.test_mode)
 
             if 'dates' not in tf_response or 'financials' not in tf_response:
+                if self.production_mode == 1:
+                    print('[ - ] Invalid or expired token detected, cannot proceed in production mode.  Exiting.')
+                    raise RuntimeError('Invalid or expired token.')
+                
                 print('[ + ] Generating Access Token...')
                 self.access_token = utils.get_access_token()
             else:

@@ -278,6 +278,15 @@ def create_database() -> None:
         );
     ''')
 
+    # Create the approved_users table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS approved_users (
+            user_number TEXT PRIMARY KEY,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+
     # Close the connection
     conn.close()
 
@@ -314,5 +323,42 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
 
         cursor.execute(sql, list(record.values()))
 
+    conn.commit()
+    conn.close()
+
+def is_user_approved(user_number: str) -> bool:
+    """
+    Returns True if the given user_number exists and is active in approved_users.
+    """
+    if not user_number:
+        return False
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM approved_users WHERE user_number = ? AND active = 1", (user_number,))
+    row = cursor.fetchone()
+    conn.close()
+    return row is not None
+
+def add_approved_user(user_number: str) -> None:
+    """
+    Adds a user_number to the approved_users table. Idempotent (ignores duplicates).
+    """
+    if not user_number:
+        return
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO approved_users (user_number, active) VALUES (?, 1)", (user_number,))
+    conn.commit()
+    conn.close()
+
+def block_user(user_number: str) -> None:
+    """
+    Block a user_number by setting active = 0.
+    """
+    if not user_number:
+        return
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE approved_users SET active = 0 WHERE user_number = ?", (user_number,))
     conn.commit()
     conn.close()
