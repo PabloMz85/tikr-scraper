@@ -31,6 +31,8 @@ class scraper_utils:
     #################################################################
 
     def create_driver():
+        onserver_mode = int(os.environ.get("TIKR_ONSERVER_MODE", 1))
+
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")               # Obligatorio en Docker
@@ -39,24 +41,47 @@ class scraper_utils:
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("window-size=1920,1080")
         chrome_options.add_argument("--remote-debugging-port=9222")
-
+        
         # User agent opcional
         user_agent = ('Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) '
                     'Chrome/22.0.1216.0 Safari/537.2')
+        
         chrome_options.add_argument(f'user-agent={user_agent}')
 
-        # Detecta si estamos en Docker y usar Chromium si está disponible
-        chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-        if os.path.exists(chrome_bin):
-            chrome_options.binary_location = chrome_bin
+        if onserver_mode == 0:
+            # Detecta si estamos en Docker y usar Chromium si está disponible
+            chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
+            if os.path.exists(chrome_bin):
+                chrome_options.binary_location = chrome_bin
 
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        return driver
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            return driver
+        else:
 
-    def get_access_token() -> str:
-        username = os.environ['TIKR_ACCOUNT_USERNAME']
-        password = os.environ['TIKR_ACCOUNT_PASSWORD']
+            # Locate Chrome binary
+            chrome_bin = os.environ.get("CHROME_BIN")
+            for candidate in [chrome_bin, "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"]:
+                if candidate and os.path.exists(candidate):
+                    chrome_options.binary_location = candidate
+                    break
+            else:
+                raise FileNotFoundError("Chrome binary not found. Install Google Chrome or Chromium.")
+
+            # Use existing driver if available
+            driver_path = "/usr/local/bin/chromedriver"
+            if not os.path.exists(driver_path):
+                raise FileNotFoundError("ChromeDriver not found. Please install it under /usr/local/bin/.")
+
+            service = Service(driver_path)
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            return driver
+
+    def get_access_token(username: str, password: str) -> str:
+        if not username:
+            username = os.environ['TIKR_ACCOUNT_USERNAME']
+        if not password:
+            password = os.environ['TIKR_ACCOUNT_PASSWORD']
         
         browser = scraper_utils.create_driver()
         browser.get('https://app.tikr.com/login')
