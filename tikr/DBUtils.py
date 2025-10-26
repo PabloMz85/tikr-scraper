@@ -2,12 +2,12 @@
 import os
 import datetime
 import sqlite3
-import uuid
-import json
 from typing import List
 
 python_path = './'
-db_path = './data/tikrDB.db'
+tikrDB_path = './data/tikrDB.db'
+approved_users_path = './data/approved_users.db'
+user_log_path = './data/user_logs.db'
 
 def create_database() -> None:
     """
@@ -15,7 +15,7 @@ def create_database() -> None:
     """
     os.makedirs(python_path + 'data', exist_ok=True)
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(tikrDB_path)
 
     # Create a cursor object to execute queries
     cursor = conn.cursor()
@@ -278,12 +278,40 @@ def create_database() -> None:
         );
     ''')
 
+    # Close the connection with tikrDB
+    conn.close()
+
+
+    conn = sqlite3.connect(approved_users_path)
+    # Create a cursor object to execute queries
+    cursor = conn.cursor()
+
     # Create the approved_users table if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS approved_users (
             user_number TEXT PRIMARY KEY,
             active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            blocked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            released_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+
+    # Close the connection with approved_users
+    conn.close()
+
+
+    conn = sqlite3.connect(user_log_path)
+    # Create a cursor object to execute queries
+    cursor = conn.cursor()
+    
+    # Create the users_log table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users_log (
+            user_number TEXT PRIMARY KEY,
+            ip_address TEXT,
+            token TEXT,
+            logged_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     ''')
 
@@ -295,7 +323,7 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
     Inserta o actualiza registros en la tabla especificada.
     Usa 'ON CONFLICT(company, year)' para hacer UPSERT automático.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(tikrDB_path)
     cursor = conn.cursor()
 
     for record in data:
@@ -332,7 +360,7 @@ def is_user_approved(user_number: str) -> bool:
     """
     if not user_number:
         return False
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(approved_users_path)
     cursor = conn.cursor()
     cursor.execute("SELECT 1 FROM approved_users WHERE user_number = ? AND active = 1", (user_number,))
     row = cursor.fetchone()
@@ -345,9 +373,10 @@ def add_approved_user(user_number: str) -> None:
     """
     if not user_number:
         return
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(approved_users_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO approved_users (user_number, active) VALUES (?, 1)", (user_number,))
+    created_at = datetime.datetime.now().isoformat()
+    cursor.execute("INSERT OR IGNORE INTO approved_users (user_number, active, created_at) VALUES (?, 1, ?)", (user_number, created_at))
     conn.commit()
     conn.close()
 
@@ -357,8 +386,35 @@ def block_user(user_number: str) -> None:
     """
     if not user_number:
         return
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(approved_users_path)
     cursor = conn.cursor()
-    cursor.execute("UPDATE approved_users SET active = 0 WHERE user_number = ?", (user_number,))
+    blocked_at = datetime.datetime.now().isoformat()
+    cursor.execute("UPDATE approved_users SET active = 0 and blocked_at = ? WHERE user_number = ?", (blocked_at, user_number))
+    conn.commit()
+    conn.close()
+
+def unblock_user(user_number: str) -> None:
+    """
+    Unblock a user_number by setting active = 1.
+    """
+    if not user_number:
+        return
+    conn = sqlite3.connect(approved_users_path)
+    cursor = conn.cursor()
+    unblocked_at = datetime.datetime.now().isoformat()
+    cursor.execute("UPDATE approved_users SET active = 0 and unblocked_at = ? WHERE user_number = ?", (unblocked_at, user_number))
+    conn.commit()
+    conn.close()
+
+def log_user_activity(user_number: str, ip_address: str, token: str) -> None:
+    """
+    Log user activity in the users_log table.
+    """
+    if not user_number or not ip_address:
+        return
+    conn = sqlite3.connect(user_log_path)
+    cursor = conn.cursor()
+    timestamp = datetime.datetime.now().isoformat()
+    cursor.execute("INSERT INTO users_log (user_number, ip_address, token, logged_at) VALUES (?, ?, ?, ?)", (user_number, ip_address, token, timestamp))
     conn.commit()
     conn.close()
