@@ -1,3 +1,4 @@
+import tempfile
 from seleniumwire import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
@@ -35,11 +36,14 @@ class scraper_utils:
 
         chrome_options = Options()
         chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")               # Obligatorio en Docker
-        chrome_options.add_argument("--disable-dev-shm-usage")    # Evita problemas de memoria compartida
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("window-size=1920,1080")
+
+        # ALWAYS create a unique temporary user-data-dir
+        temp_profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
+        chrome_options.add_argument(f"--user-data-dir={temp_profile_dir}")
+
         chrome_options.add_argument("--remote-debugging-port=9222")
         
         # User agent opcional
@@ -75,7 +79,7 @@ class scraper_utils:
 
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
+            return driver, temp_profile_dir
 
     def get_access_token(username: str, password: str) -> str:
         if not username:
@@ -83,7 +87,7 @@ class scraper_utils:
         if not password:
             password = os.environ['TIKR_ACCOUNT_PASSWORD']
         
-        browser = scraper_utils.create_driver()
+        browser, temp_profile_dir = scraper_utils.create_driver()
         browser.get('https://app.tikr.com/login')
         browser.find_element(By.XPATH, '//input[@type="email"]').send_keys(username)
         browser.find_element(By.XPATH, '//input[@type="password"]').send_keys(password)
@@ -117,6 +121,8 @@ class scraper_utils:
             print(err)
         
         browser.close()
+        import shutil
+        shutil.rmtree(temp_profile_dir, ignore_errors=True)
         return access_token
     
     def get_est_data(access_token: str, headers: str, tid: int, cid: int, test_mode: int) -> any:
