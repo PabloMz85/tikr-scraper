@@ -308,7 +308,7 @@ def create_database() -> None:
     # Create the users_log table if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users_log (
-            user_number TEXT PRIMARY KEY,
+            user_number TEXT,
             ip_address TEXT,
             token TEXT,
             logged_at TEXT DEFAULT CURRENT_TIMESTAMP
