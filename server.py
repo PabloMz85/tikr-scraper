@@ -70,7 +70,16 @@ def scrape():
     data = request.get_json(silent=True) or {}
     ticker = data.get("asset") or request.form.get("asset") or request.args.get("asset")
     token = data.get("token") or request.form.get("token") or request.args.get("token")
+    with_actual_year_included = data.get("with_actual_year_included") or request.form.get("with_actual_year_included") or request.args.get("with_actual_year_included")
     user_number = data.get("user_number") or request.form.get("user_number") or request.args.get("user_number")
+
+    # Default to 1 if not provided (wich not includes the actual year), but if provided, must be 0 or 1
+    # They need to be switched
+    if with_actual_year_included is None:
+        with_actual_year_included = 1
+    else:
+        with_actual_year_included = int(with_actual_year_included)
+        with_actual_year_included = 0 if with_actual_year_included == 1 else 1
 
     if not ticker:
         return jsonify({"error": "Se requiere 'asset'."}), 400
@@ -82,6 +91,8 @@ def scrape():
             return jsonify({"error": "Se requiere 'user_number'."}), 400
         if not is_user_approved(user_number):
             return jsonify({"error": "Usuario no autorizado"}), 403
+        if (with_actual_year_included not in [0,1]):
+            return jsonify({"error": "'with_actual_year_included' debe ser 0 o 1."}), 400
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -101,7 +112,7 @@ def scrape():
         if not (tid and cid):
             return jsonify({"error": "No se encontró la compañía"}), 404
 
-        scraper.get_financials(ticker, tid, cid)
+        scraper.get_financials(ticker, tid, cid, with_actual_year_included)
         exported_files = scraper.export(ticker)
         if not exported_files:
             return jsonify({"error": "No se exportaron archivos"}), 500

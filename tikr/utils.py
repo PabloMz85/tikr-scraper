@@ -60,7 +60,7 @@ class scraper_utils:
 
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=chrome_options)
-            return driver
+            return driver, temp_profile_dir
         else:
 
             # Locate Chrome binary
@@ -391,7 +391,7 @@ class scraper_utils:
         except (TypeError, ValueError):
             return '', False
     
-    def get_period_structure(response):
+    def get_period_structure(response, with_actual_year_included: int):
         periods = response.get('dates', [])
         if not periods:
             return [], {}
@@ -400,7 +400,7 @@ class scraper_utils:
         # we need to add 1 to include the current year
         # e.g. if we want 3 years of history, we need to include current year + 3 previous years
         # the current year will be taken as LTM
-        years_mount = int(os.environ['TIKR_EXPORT_YEARS']) + 1
+        years_mount = int(os.environ['TIKR_EXPORT_YEARS']) + with_actual_year_included
         actual_year = datetime.now().year
         years = [actual_year - i for i in range(years_mount)]
 

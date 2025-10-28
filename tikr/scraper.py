@@ -71,7 +71,7 @@ class TIKR:
         else:
             return None, None
     
-    def get_financials(self, asset: str, tid: int, cid: int):
+    def get_financials(self, asset: str, tid: int, cid: int, with_actual_year_included: int):
         while True:
             tf_response = utils.get_tf_data(self.access_token, self.headers, tid, cid, self.test_mode)
 
@@ -108,7 +108,7 @@ class TIKR:
         print('[ + ] Exporting data...')
 
         # get all period keys and mapping
-        period_keys, period_lookup = utils.get_period_structure(tf_response)
+        period_keys, period_lookup = utils.get_period_structure(tf_response, with_actual_year_included)
         if not period_keys or not period_lookup:
             print('[ - ] No periods found in the tf response data')
             return
@@ -472,7 +472,7 @@ class TIKR:
                                 period_str = december_date
                             else:
                                 end_period_date = self.period_end_dates.get(y, str(y))
-                                period_str = end_period_date.strftime('%m/%d/%y')
+                                period_str = end_period_date.strftime('%Y/%m/%d')
                             formatted_years.append(period_str)
                     years = formatted_years
 
