@@ -38,10 +38,8 @@ A Python utility for downloading historical financial statements from [TIKR](htt
    TIKR_ACCOUNT_USERNAME = 'your_username'
    TIKR_ACCOUNT_PASSWORD = 'your_password'
    TIKR_TEST_MODE = 1
-
-   # Supported values: 'xlsx', 'csv', 'json', 'parquet', 'db'
-   TIKR_EXPORT_FORMAT = 'db'
-   TIKR_EXPORT_YEARS = 5
+   TIKR_EXPORT_YEARS = 10
+   TICKER_USERID = 'your_userid_or_userToken'
    ```
 
 ## Usage
@@ -120,8 +118,9 @@ Edit `config.py` to customize:
 | `TIKR_ACCOUNT_USERNAME` | Your TIKR email | - |
 | `TIKR_ACCOUNT_PASSWORD` | Your TIKR password | - |
 | `TIKR_TEST_MODE` | Test mode (using downloaded files from AAPL) | `1` |
-| `TIKR_EXPORT_FORMAT` | Output format | `'db'` |
-| `TIKR_EXPORT_YEARS` | Amount of exported years | `5` |
+| `TIKR_EXPORT_YEARS` | Amount of exported years | `10` |
+| `TICKER_USERID` | Your TIKR userid or tokenid | - |
+
 
 ## Exported Metrics
 

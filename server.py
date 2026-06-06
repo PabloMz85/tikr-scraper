@@ -1,7 +1,7 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, json
 from tikr.scraper import TIKR
 from tikr.utils import scraper_utils
-from tikr.DBUtils import create_database, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity
+from tikr.DBUtils import create_database, list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity
 
 import os
 import shutil
@@ -17,7 +17,6 @@ load_dotenv(dotenv_path=".env")
 
 defaults = {
     "TIKR_TEST_MODE": "0",
-    "TIKR_EXPORT_FORMAT": "db",
     "TIKR_EXPORT_YEARS": "10",
     "TIKR_PRODUCTION_MODE": "1",  # fuerza modo productivo
 }
@@ -33,8 +32,8 @@ REQUIRED_ENV_VARS = [
 #    "TIKR_ACCOUNT_PASSWORD",
     "TIKR_TEST_MODE",
     "TIKR_PRODUCTION_MODE",
-    "TIKR_EXPORT_FORMAT",
     "TIKR_EXPORT_YEARS",
+    "TICKER_USERID",
     "SUPER_USER_PASS",
 ]
 
@@ -49,6 +48,7 @@ if missing:
 app = Flask(__name__)
 test_mode = int(os.environ.get("TIKR_TEST_MODE", 0))
 production_mode = int(os.environ.get("TIKR_PRODUCTION_MODE", 1))
+user_id = os.environ.get("TICKER_USERID", "")
 
 def get_client_ip():
     # Check X-Forwarded-For first
@@ -62,11 +62,10 @@ def get_client_ip():
 create_database()
 
 # =====================================================
-# ✅ Routes
+# ✅ Common functions
 # =====================================================
 
-@app.route("/v0.1/getAssetExcel", methods=["POST"])
-def scrape():
+def _get_common_data(request):
     data = request.get_json(silent=True) or {}
     ticker = data.get("asset") or request.form.get("asset") or request.args.get("asset")
     token = data.get("token") or request.form.get("token") or request.args.get("token")
@@ -82,17 +81,67 @@ def scrape():
         with_actual_year_included = 0 if with_actual_year_included == 1 else 1
 
     if not ticker:
-        return jsonify({"error": "Se requiere 'asset'."}), 400
+        raise {"error": "Se requiere 'asset'.", "error_number": 400}
 
     if production_mode == 1:
         if not token:
-            return jsonify({"error": "Se requiere 'token'."}), 400
+            raise {"error": "Se requiere 'token'.", "error_number": 400}
         if not user_number:
-            return jsonify({"error": "Se requiere 'user_number'."}), 400
+            raise {"error": "Se requiere 'user_number'.", "error_number": 400}
         if not is_user_approved(user_number):
-            return jsonify({"error": "Usuario no autorizado"}), 403
+            raise {"error": "Usuario no autorizado", "error_number": 403}
         if (with_actual_year_included not in [0,1]):
-            return jsonify({"error": "'with_actual_year_included' debe ser 0 o 1."}), 400
+            raise {"error": "'with_actual_year_included' debe ser 0 o 1.", "error_number": 400}
+    
+    return [user_number, token, ticker, with_actual_year_included]
+
+
+def normalizar_claves_json(objeto: any) -> any:
+    """
+    Realiza un recorrido recursivo sobre estructuras de datos anidadas
+    para garantizar que todas las claves se transformen al tipo 'str'.
+    Esta normalización previene excepciones de colisión de tipos
+    durante el ordenamiento lexicográfico en la serialización.
+    """
+    if isinstance(objeto, dict):
+        return {str(clave): normalizar_claves_json(valor) for clave, valor in objeto.items()}
+    elif isinstance(objeto, list):
+        return [normalizar_claves_json(elemento) for elemento in objeto]
+    else:
+        # Se retorna el valor original para tipos primitivos (int, float, str, booleanos)
+        return objeto
+    
+
+# =====================================================
+# ✅ Routes
+# =====================================================
+
+@app.route("/v0.1/getCompanyInfo", methods=["POST"])
+def get_company_info():
+    data = request.get_json(silent=True) or {}
+    ticker = data.get("asset") or request.form.get("asset") or request.args.get("asset")
+    token = data.get("token") or request.form.get("token") or request.args.get("token")
+
+    scraper = TIKR(test_mode, production_mode)
+    scraper.set_token(token)
+    
+    if test_mode == 0:
+        tid, cid = scraper.find_company_info(ticker, user_id)
+    else:
+        tid, cid = 2590360, 24937  # Apple Inc.
+    
+    if not (tid and cid):
+        return jsonify({"error": "No se encontró la compañía"}), 404
+    
+    return jsonify({"tid": tid, "cid": cid}), 200
+
+
+@app.route("/v0.1/getAssetExcel", methods=["POST"])
+def get_asset_excel():
+    try:
+        [user_number, token, ticker, with_actual_year_included] = _get_common_data(request)
+    except e:
+        return jsonify({"error": e.error}), e.error_number
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -113,7 +162,7 @@ def scrape():
             return jsonify({"error": "No se encontró la compañía"}), 404
 
         scraper.get_financials(ticker, tid, cid, with_actual_year_included)
-        exported_files = scraper.export(ticker)
+        exported_files = scraper.export(ticker, 'xlsx')
         if not exported_files:
             return jsonify({"error": "No se exportaron archivos"}), 500
 
@@ -141,20 +190,71 @@ def scrape():
         return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
+@app.route("/v0.1/getAssetJSON", methods=["POST"])
+def get_asset_json():
+    try:
+        [user_number, token, ticker, with_actual_year_included] = _get_common_data(request)
+    except e:
+        return jsonify({"error": e.error}), e.error_number
+
+    try:
+        client_ip = get_client_ip()
+        log_user_activity(user_number, client_ip, token)
+        
+        scraper = TIKR(test_mode, production_mode)
+        scraper.set_token(token)
+
+        if test_mode == 0:
+            tid, cid = scraper.find_company_info(ticker, user_id)
+        else:
+            tid, cid = 2590360, 24937  # Apple Inc.
+
+        if not (tid and cid):
+            return jsonify({"error": "No se encontró la compañía"}), 404
+
+        scraper.get_financials(ticker, tid, cid, with_actual_year_included)
+        payload = scraper.export(ticker, 'json')
+        if not payload:
+            return jsonify({"error": "No se ha podido exportar"}), 500
+
+        payload_normalizado = normalizar_claves_json(payload)
+        response = app.response_class(
+            response=json.dumps(payload_normalizado),
+            status=200,
+            mimetype='application/json'
+        )
+        return response
+
+    except RuntimeError as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Token inválido o expirado: {str(e)}"}), 401
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+
+
 @app.route("/v0.1/generateToken", methods=["POST"])
 def generateToken():
-    data = request.get_json(silent=True) or {}
-    username = data.get("username") or request.form.get("username") or request.args.get("username")
-    password = data.get("password") or request.form.get("password") or request.args.get("password")
-    
-    if not username:
-        return jsonify({"error": "Se requiere 'username'."}), 400
-    if not password:
-        return jsonify({"error": "Se requiere 'password'."}), 400
-    
     try:
-        token = scraper_utils.get_access_token(username, password)
+        token = scraper_utils.get_access_token()
         return jsonify({"token": token }), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+
+
+@app.route("/v0.1/listUsers", methods=["POST"])
+def listUsers():
+    data = request.get_json(silent=True) or {}
+    super_admin_pass = data.get("super_admin_pass") or request.form.get("super_admin_pass") or request.args.get("super_admin_pass")
+    if super_admin_pass != os.getenv("SUPER_USER_PASS"):
+        return jsonify({"error": "Acceso denegado."}), 403
+
+    try:
+        userList = list_users()
+        json_salida = json.dumps(userList, indent=4, ensure_ascii=False)
+        return json_salida
+    
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Error interno: {str(e)}"}), 500

@@ -21,20 +21,14 @@ class TIKR:
             raise
 
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
             'Content-Type': 'application/json',
             'Origin': 'https://app.tikr.com',
-            'Connection': 'keep-alive',
             'Referer': 'https://app.tikr.com/',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'cross-site',
-            'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache',
-            'TE': 'trailers'
+            'Sec-Fetch-Site': 'cross-site'
         }
         self.statements = keys.statements
         self.content = {
@@ -54,23 +48,92 @@ class TIKR:
             return
         self.access_token = token
     
-    def find_company_info(self, ticker):
-        headers = self.headers.copy()
-        headers['content-type'] = 'application/x-www-form-urlencoded'
-        data = '{"params":"query=' + ticker + '&distinct=2"}'
-        url = ('https://tjpay1dyt8-3.algolianet.com/1/indexes/tikr-feb/query?'
-               'x-algolia-agent=Algolia%20for%20JavaScript%20(3.35.1)%3B%20Browser%20'
-               '(lite)&x-algolia-application-id=TJPAY1DYT8&'
-               'x-algolia-api-key=d88ea2aa3c22293c96736f5ceb5bab4e')
-        response = requests.post(url, headers=headers, data=data)
+    def find_company_info(self, ticker, userID):
+        # 1. Replicación estricta de las Cabeceras HTTP (Headers)
+        # Se han transpuesto literalmente los valores de la traza de red.
+        headers = {
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            # 'Accept-Language': 'es-ES,es;q=0.6',
+            'Connection': 'keep-alive',
+            'Host': 'tjpay1dyt8-dsn.algolia.net',
+            'Origin': 'https://app.tikr.com',
+            'Referer': 'https://app.tikr.com/',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-GPC': '1',
+            # User-Agent actualizado a la versión real detectada en la traza
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
+            'accept': 'application/json',
+            # Corrección Crítica: El Content-Type reportado por la red es text/plain, no application/json
+            'content-type': 'text/plain',
+        }
 
-        if response.json()['hits']:
-            tid = response.json()['hits'][0]['tradingitemid']
-            cid = response.json()['hits'][0]['companyid']
-            return tid, cid
-        else:
+        # 2. Configuración de la Carga Útil (Payload)
+        # Se mantiene la estructura exacta de la traza. El índice "tikr-terminal-v1" SIGUE ACTIVO.
+        payload_dict = {
+            "requests": [
+                {
+                    "indexName": "tikr-terminal-v1",
+                    "query": ticker,
+                    "userToken": userID
+                }
+            ]
+        }
+        
+        # Se serializa el diccionario a una cadena JSON sin espacios en blanco 
+        # para evitar alterar el Content-Length (Mitchell, 2018).
+        data = json.dumps(payload_dict, separators=(',', ':'))
+
+        # 3. Construcción de la URL de Destino
+        # Note el cambio en el subdominio: tjpay1dyt8-dsn.algolia.net (Previamente usaba -3)
+        # Note el cambio en el endpoint: /1/indexes/*/queries (Previamente usaba /query)
+        url = (
+            'https://tjpay1dyt8-dsn.algolia.net/1/indexes/*/queries?'
+            'x-algolia-agent=Algolia%20for%20JavaScript%20(5.52.1)%3B%20Lite%20(5.52.1)%3B%20Browser&'
+            'x-algolia-api-key=d88ea2aa3c22293c96736f5ceb5bab4e&'
+            'x-algolia-application-id=TJPAY1DYT8'
+        )
+
+        # 4. Ejecución de la Petición
+        try:
+            response = requests.post(url, headers=headers, data=data)
+            
+            # Validación de la respuesta
+            response.raise_for_status() 
+            
+            datos_json = response.json()
+
+            # 1. Acceso al nodo principal 'results' de manera segura
+            lista_resultados = datos_json.get('results', [])
+            
+            if lista_resultados and len(lista_resultados) > 0:
+                # 2. Aislamiento del primer diccionario dentro del arreglo 'results'
+                nodo_primario = lista_resultados[0]
+                
+                # 3. Acceso seguro al sub-arreglo 'hits'
+                hits = nodo_primario.get('hits', [])
+                
+                # 4. Evaluación de la existencia de registros válidos
+                if hits and len(hits) > 0:
+                    primer_registro = hits[0]
+                    
+                    # 5. Extracción de las variables de interés
+                    tid = primer_registro.get('tradingitemid')
+                    cid = primer_registro.get('companyid')
+                    
+                    return tid, cid
+                    
+            # Retorno por defecto en caso de estructura inválida o vacía
             return None, None
+            
+        except requests.exceptions.HTTPError as err_http:
+            print(f"Error HTTP: {err_http}")
+            print(f"Cuerpo de la respuesta: {response.text}")
+        except Exception as e:
+            print(f"Error general de ejecución: {e}")
     
+
     def get_financials(self, asset: str, tid: int, cid: int, with_actual_year_included: int):
         while True:
             tf_response = utils.get_tf_data(self.access_token, self.headers, tid, cid, self.test_mode)
@@ -287,8 +350,8 @@ class TIKR:
         industry = company_info.get('data', {}).get('simpleindustrydescription', '')
         return industry
 
-    def export(self, asset: str):
-        export_format = os.environ.get('TIKR_EXPORT_FORMAT', 'xlsx').lower()
+    def export(self, asset: str, export_format: str):
+        export_format = export_format.lower()
         valid_formats = {'xlsx', 'csv', 'json', 'parquet', 'db'}
         if export_format not in valid_formats:
             print(f"[ - ] Unknown export format '{export_format}', defaulting to XLSX")
@@ -343,14 +406,11 @@ class TIKR:
                 exported_files.append(output_path)
 
         elif export_format == 'json':
-            output_path = f"{base_name}.json"
             payload = {
                 statement_name: df.T.to_dict(orient='index')
                 for statement_name, df in frames.items()
             }
-            with open(output_path, 'w', encoding='utf-8') as handle:
-                json.dump(payload, handle, indent=2)
-            exported_files.append(output_path)
+            return payload
 
         elif export_format == 'parquet':
             for statement_name, df in frames.items():

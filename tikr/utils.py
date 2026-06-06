@@ -6,6 +6,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 from datetime import datetime
 import json
@@ -35,7 +36,7 @@ class scraper_utils:
         onserver_mode = int(os.environ.get("TIKR_ONSERVER_MODE", 1))
 
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("window-size=1920,1080")
@@ -43,14 +44,6 @@ class scraper_utils:
         # ALWAYS create a unique temporary user-data-dir
         temp_profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         chrome_options.add_argument(f"--user-data-dir={temp_profile_dir}")
-
-        chrome_options.add_argument("--remote-debugging-port=9222")
-        
-        # User agent opcional
-        user_agent = ('Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) '
-                    'Chrome/22.0.1216.0 Safari/537.2')
-        
-        chrome_options.add_argument(f'user-agent={user_agent}')
 
         if onserver_mode == 0:
             # Detecta si estamos en Docker y usar Chromium si está disponible
@@ -81,7 +74,7 @@ class scraper_utils:
             driver = webdriver.Chrome(service=service, options=chrome_options)
             return driver, temp_profile_dir
 
-    def get_access_token(username: str, password: str) -> str:
+    def get_access_token(username: str = None, password: str = None) -> str:
         if not username:
             username = os.environ['TIKR_ACCOUNT_USERNAME']
         if not password:
@@ -89,15 +82,19 @@ class scraper_utils:
         
         browser, temp_profile_dir = scraper_utils.create_driver()
         browser.get('https://app.tikr.com/login')
+
         browser.find_element(By.XPATH, '//input[@type="email"]').send_keys(username)
         browser.find_element(By.XPATH, '//input[@type="password"]').send_keys(password)
         browser.find_element(By.XPATH, '//button/span').click()
-        while 'Welcome to TIKR' not in browser.page_source:
+        
+        # while 'Welcome to TIKR' not in browser.page_source:
+        while 'Bienvenido a TIKR' not in browser.page_source:
             time.sleep(5)
         browser.get('https://app.tikr.com/screener?sid=1')
 
         fetch_button = WebDriverWait(browser, 20).until(
-            EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Fetch Screen")]/..'))
+            EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Obtener pantalla")]/..'))
+            # EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Fetch Screen")]/..'))
         )
         # Make sure the button is visible on the screen.
         browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", fetch_button)

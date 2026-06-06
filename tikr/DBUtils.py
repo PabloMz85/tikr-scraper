@@ -354,6 +354,30 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
     conn.commit()
     conn.close()
 
+def list_users() -> list:
+    """
+    Returns all users.
+    """
+    conn = sqlite3.connect(approved_users_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM approved_users")
+    rows = cursor.fetchall()
+    conn.close()
+
+    # 1. Extracción de los nombres de las columnas desde los metadatos del cursor
+    # cursor.description retorna una tupla de tuplas donde el índice 0 es el nombre de la columna.
+    nombres_columnas = [descripcion[0] for descripcion in cursor.description]
+
+    # 2. Emparejamiento iterativo (Zipping)
+    # Se fusionan los nombres de las columnas con los valores de cada fila,
+    # garantizando estructuras de longitud 2 (par clave-valor) para el constructor dict().
+    lista_diccionarios = [
+        dict(zip(nombres_columnas, fila)) 
+        for fila in rows
+    ]
+
+    return lista_diccionarios
+
 def is_user_approved(user_number: str) -> bool:
     """
     Returns True if the given user_number exists and is active in approved_users.
