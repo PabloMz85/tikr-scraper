@@ -23,3 +23,7 @@ data/
 
 # environment
 .venv/
+.venv*
+
+# database
+mariadb_data/

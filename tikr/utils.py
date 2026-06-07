@@ -46,12 +46,16 @@ class scraper_utils:
         chrome_options.add_argument(f"--user-data-dir={temp_profile_dir}")
 
         if onserver_mode == 0:
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            
             # Detecta si estamos en Docker y usar Chromium si está disponible
-            chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-            if os.path.exists(chrome_bin):
-                chrome_options.binary_location = chrome_bin
+            # chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
+            # if os.path.exists(chrome_bin):
+            chrome_options.binary_location = "/usr/bin/chromium"
 
-            service = Service(ChromeDriverManager().install())
+            driver_path = "/usr/bin/chromedriver"
+            service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
             return driver, temp_profile_dir
         else:
@@ -88,14 +92,20 @@ class scraper_utils:
         browser.find_element(By.XPATH, '//button/span').click()
         
         # while 'Welcome to TIKR' not in browser.page_source:
-        while 'Bienvenido a TIKR' not in browser.page_source:
+        while ('Bienvenido a TIKR' not in browser.page_source) and ('Welcome to TIKR' not in browser.page_source):
             time.sleep(5)
-        browser.get('https://app.tikr.com/screener?sid=1')
+            print('Esperando: Bienvenido a TIKR')
 
-        fetch_button = WebDriverWait(browser, 20).until(
-            EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Obtener pantalla")]/..'))
-            # EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Fetch Screen")]/..'))
-        )
+        browser.get('https://app.tikr.com/screener?sid=1')
+        if ('Bienvenido a TIKR' not in browser.page_source):
+            fetch_button = WebDriverWait(browser, 20).until(
+                EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Fetch Screen")]/..'))
+            )
+        else:
+            fetch_button = WebDriverWait(browser, 20).until(
+                EC.element_to_be_clickable((By.XPATH, '//button/span[contains(text(), "Obtener pantalla")]/..'))
+            )
+        
         # Make sure the button is visible on the screen.
         browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", fetch_button)
         time.sleep(1)  # small delay for the scroll to finish

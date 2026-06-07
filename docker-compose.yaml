@@ -1,0 +1,69 @@
+services:
+  # =====================================================
+  # MariaDB Database
+  # =====================================================
+  mariadb:
+    image: mariadb:12
+    container_name: ${MYSQL_HOST}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3307:3306"
+    volumes:
+      - ./mariadb_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - investing-network
+    command: >
+      --sql-mode="NO_ENGINE_SUBSTITUTION"
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
+      --max-connections=200
+
+  # =====================================================
+  # Investing API Backend
+  # =====================================================
+  investing-api:
+    shm_size: "2gb"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: investing-backend
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      APP_ENV: development
+      DEBUG: "true"
+      TIKR_ACCOUNT_USERNAME: ${TIKR_ACCOUNT_USERNAME}
+      TIKR_ACCOUNT_PASSWORD: ${TIKR_ACCOUNT_PASSWORD}
+      TIKR_PRODUCTION_MODE: ${TIKR_PRODUCTION_MODE}
+      TIKR_EXPORT_YEARS: ${TIKR_EXPORT_YEARS}
+      TIKR_ONSERVER_MODE: ${TIKR_ONSERVER_MODE}
+      TIKR_USERID: ${TIKR_USERID}
+      SUPER_USER_PASS: ${SUPER_USER_PASS}
+    ports:
+      - "5050:5050"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    networks:
+      - investing-network
+
+networks:
+  investing-network:
+    driver: bridge

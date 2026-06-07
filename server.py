@@ -33,7 +33,7 @@ REQUIRED_ENV_VARS = [
     "TIKR_TEST_MODE",
     "TIKR_PRODUCTION_MODE",
     "TIKR_EXPORT_YEARS",
-    "TICKER_USERID",
+    "TIKR_USERID",
     "SUPER_USER_PASS",
 ]
 
@@ -48,7 +48,7 @@ if missing:
 app = Flask(__name__)
 test_mode = int(os.environ.get("TIKR_TEST_MODE", 0))
 production_mode = int(os.environ.get("TIKR_PRODUCTION_MODE", 1))
-user_id = os.environ.get("TICKER_USERID", "")
+user_id = os.environ.get("TIKR_USERID", "")
 
 def get_client_ip():
     # Check X-Forwarded-For first
@@ -115,6 +115,9 @@ def normalizar_claves_json(objeto: any) -> any:
 # =====================================================
 # ✅ Routes
 # =====================================================
+@app.route("/v0.1/health")
+def health():
+    return {"ok": True}
 
 @app.route("/v0.1/getCompanyInfo", methods=["POST"])
 def get_company_info():
@@ -275,9 +278,11 @@ def createApprovedUser():
     try:
         add_approved_user(user_number)
         return jsonify({"message": f"Usuario {user_number} creado exitosamente."}), 200
+    except ConnectionError as e:
+        # El servidor web no se cae, responde un HTTP 503 elegante
+        return {"error": "Servicio temporalmente no disponible", "details": str(e)}, 503
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": f"Error interno: {str(e)}"}), 500
+        return {"error": "Error interno del servidor", "details": str(e)}, 500
 
 
 @app.route("/v0.1/blockUser", methods=["POST"])

@@ -42,12 +42,14 @@ class TIKR:
         else:
             self.access_token = ''
 
+
     def set_token(self, token: str):
         if self.production_mode == 0:
             print('[ - ] Production mode is not enabled; token be set later.')
             return
         self.access_token = token
     
+
     def find_company_info(self, ticker, userID):
         # 1. Replicación estricta de las Cabeceras HTTP (Headers)
         # Se han transpuesto literalmente los valores de la traza de red.
@@ -345,10 +347,15 @@ class TIKR:
                         else:
                             fiscalyear[column] = ''
 
+        # Almacena los datos en la DB
+        self.export(asset, 'db')
+
+
     def get_industry(self, tid: int, cid: int):
         company_info = utils.get_tibobj_data(self.access_token, self.headers, tid, cid, self.test_mode)
         industry = company_info.get('data', {}).get('simpleindustrydescription', '')
         return industry
+
 
     def export(self, asset: str, export_format: str):
         export_format = export_format.lower()
@@ -443,6 +450,7 @@ class TIKR:
             exported_files = ['database']
 
         return exported_files
+
 
     def edit_excel_file(self, filepath: str, tid: int, cid: int, tipo_compania: str):
         """Apply formatting to the exported Excel file."""
