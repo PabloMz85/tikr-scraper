@@ -1,7 +1,7 @@
 from flask import Flask, request, send_file, jsonify, json
 from tikr.scraper import TIKR
 from tikr.utils import scraper_utils
-from tikr.DBUtils import create_database, list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity
+from tikr.DBUtils import list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity
 
 import os
 import shutil
@@ -58,8 +58,6 @@ def get_client_ip():
     # Fallback to the direct TCP peer
     return request.remote_addr
 
-
-create_database()
 
 # =====================================================
 # ✅ Common functions

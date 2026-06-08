@@ -3,7 +3,7 @@ import os
 import datetime
 import mariadb
 import sys
-from typing import List
+from typing import List, Optional
 import logging
 
 # Extraemos el valor del entorno como string
@@ -24,6 +24,7 @@ DB_CONFIG = {
     "autocommit": False
 }
 
+
 def get_connection() -> mariadb.Connection:
     """
     Establece y retorna una conexión a la base de datos MariaDB.
@@ -37,17 +38,104 @@ def get_connection() -> mariadb.Connection:
         # Lanzamos una excepción controlada para que Flask la maneje
         raise ConnectionError(f"No se pudo conectar a la base de datos: {e}") from e
 
-def create_database() -> None:
-    """
-    La creación de las tablas y bases de datos está delegada idealmente 
-    a un script DDL (.sql) inicial. Sin embargo, si se requiere asegurar 
-    la existencia de la estructura desde el código, se ejecuta aquí.
-    Se omite el DDL repetitivo en esta función para mantener el código limpio, 
-    ya que se asume la ejecución previa del script SQL proporcionado.
-    """
-    pass
 
-def insert_or_update_data(table: str, data: List[dict]) -> None:
+def record_exists_and_unchanged(table: str, record: dict) -> bool:
+    """
+    Verifica si el registro ya existe en la tabla con los mismos valores.
+    Retorna True si existe y todos los campos coinciden, False en caso contrario.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            f"SELECT * FROM {table} WHERE company = ? AND year = ?",
+            (record.get("company"), record.get("year"))
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            return False
+        existing.pop("updated_at", None)
+        for key, value in record.items():
+            if key not in existing:
+                return False
+            ev = existing[key]
+            if ev is None and value == '':
+                continue
+            if ev is None and value != '':
+                return False
+            if ev is not None and value == '':
+                return False
+            if ev != value:
+                return False
+        return True
+    except mariadb.Error as e:
+        print(f"Error verificando existencia de registro en {table}: {e}", file=sys.stderr)
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_financials_from_db(company: str) -> dict:
+    """
+    Consulta todas las tablas financieras en busca de datos existentes para una compañía.
+    Retorna un dict con la estructura:
+    {
+        'income_statement': [{'company': ..., 'year': ..., ...}, ...],
+        'cashflow_statement': [...],
+        'balancesheet_statement': [...],
+        'multiples_statement': [...]
+    }
+    Las tablas sin datos retornan listas vacias.
+    """
+    tables = ['income_statement', 'cashflow_statement', 'balancesheet_statement', 'multiples_statement']
+    result = {table: [] for table in tables}
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        for table in tables:
+            cursor.execute(
+                f"SELECT * FROM {table} WHERE company = ? ORDER BY year",
+                (company,)
+            )
+            rows = cursor.fetchall()
+            if rows:
+                for row in rows:
+                    row.pop("updated_at", None)
+                result[table] = rows
+        return result
+    except mariadb.Error as e:
+        print(f"Error consultando datos financieros desde DB: {e}", file=sys.stderr)
+        return result
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_last_update_time(company: str, table: str = 'income_statement') -> Optional[datetime.datetime]:
+    """
+    Retorna el timestamp del ultimo update de una compañia en la tabla especificada.
+    Si no hay registros, retorna None.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT MAX(updated_at) FROM {table} WHERE company = ?",
+            (company,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
+    except mariadb.Error as e:
+        print(f"Error consultando ultimo update en {table}: {e}", file=sys.stderr)
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def insert_or_update_data(table: str, data: List[dict]) -> dict:
     """
     Inserta o actualiza registros en la tabla especificada.
     Utiliza la directiva 'ON DUPLICATE KEY UPDATE' propia de MariaDB.
@@ -106,6 +194,8 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
     conn.commit()
     cursor.close()
     conn.close()
+    return stats
+
 
 def list_users() -> list:
     """
@@ -125,6 +215,7 @@ def list_users() -> list:
     finally:
         cursor.close()
         conn.close()
+
 
 def is_user_approved(user_number: str) -> bool:
     """
@@ -149,6 +240,7 @@ def is_user_approved(user_number: str) -> bool:
     finally:
         cursor.close()
         conn.close()
+
 
 def add_approved_user(user_number: str) -> None:
     """
@@ -198,6 +290,7 @@ def block_user(user_number: str) -> None:
         cursor.close()
         conn.close()
 
+
 def unblock_user(user_number: str) -> None:
     """
     Restituye el acceso a un usuario y registra el instante de la liberación.
@@ -222,6 +315,7 @@ def unblock_user(user_number: str) -> None:
     finally:
         cursor.close()
         conn.close()
+
 
 def log_user_activity(user_number: str, ip_address: str, token: str) -> None:
     """

@@ -2,11 +2,9 @@ import argparse
 import os
 import shutil
 
-from tikr.DBUtils import create_database
 from tikr.scraper import TIKR
 from tikr.utils import bcolors
 
-create_database()
 
 def main():
     """Command line entry point for the scraper."""

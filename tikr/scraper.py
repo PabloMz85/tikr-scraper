@@ -1,7 +1,7 @@
 from .utils import scraper_utils as utils
-from tikr.DBUtils import insert_or_update_data
+from tikr.DBUtils import insert_or_update_data, get_financials_from_db, get_last_update_time
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import keys
 import requests
@@ -137,6 +137,13 @@ class TIKR:
     
 
     def get_financials(self, asset: str, tid: int, cid: int, with_actual_year_included: int):
+        last_update = get_last_update_time(asset)
+        if last_update and (datetime.now() - last_update) < timedelta(hours=1):
+            cached = get_financials_from_db(asset)
+            print(f'[ + ] Using cached data from DB for {asset}')
+            self.content = cached
+            return
+
         while True:
             tf_response = utils.get_tf_data(self.access_token, self.headers, tid, cid, self.test_mode)
 
