@@ -24,6 +24,7 @@ DB_CONFIG = {
     "autocommit": False
 }
 
+
 def get_connection() -> mariadb.Connection:
     """
     Establece y retorna una conexión a la base de datos MariaDB.
@@ -37,15 +38,6 @@ def get_connection() -> mariadb.Connection:
         # Lanzamos una excepción controlada para que Flask la maneje
         raise ConnectionError(f"No se pudo conectar a la base de datos: {e}") from e
 
-def create_database() -> None:
-    """
-    La creación de las tablas y bases de datos está delegada idealmente 
-    a un script DDL (.sql) inicial. Sin embargo, si se requiere asegurar 
-    la existencia de la estructura desde el código, se ejecuta aquí.
-    Se omite el DDL repetitivo en esta función para mantener el código limpio, 
-    ya que se asume la ejecución previa del script SQL proporcionado.
-    """
-    pass
 
 def insert_or_update_data(table: str, data: List[dict]) -> None:
     """
@@ -80,7 +72,6 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
             ON DUPLICATE KEY UPDATE
             {update_clause};
         """
-        print('Consulta a ejecutar: ' + sql)
         try:
             cursor.execute(sql, tuple(record.values()))
         except mariadb.Error as e:
@@ -89,6 +80,7 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
     conn.commit()
     cursor.close()
     conn.close()
+
 
 def list_users() -> list:
     """
@@ -108,6 +100,7 @@ def list_users() -> list:
     finally:
         cursor.close()
         conn.close()
+
 
 def is_user_approved(user_number: str) -> bool:
     """
@@ -133,6 +126,7 @@ def is_user_approved(user_number: str) -> bool:
         cursor.close()
         conn.close()
 
+
 def add_approved_user(user_number: str) -> None:
     """
     Registra un nuevo usuario. Utiliza 'INSERT IGNORE' para garantizar la idempotencia,
@@ -156,6 +150,7 @@ def add_approved_user(user_number: str) -> None:
     finally:
         cursor.close()
         conn.close()
+
 
 def block_user(user_number: str) -> None:
     """
@@ -181,6 +176,7 @@ def block_user(user_number: str) -> None:
         cursor.close()
         conn.close()
 
+
 def unblock_user(user_number: str) -> None:
     """
     Restituye el acceso a un usuario y registra el instante de la liberación.
@@ -205,6 +201,7 @@ def unblock_user(user_number: str) -> None:
     finally:
         cursor.close()
         conn.close()
+
 
 def log_user_activity(user_number: str, ip_address: str, token: str) -> None:
     """

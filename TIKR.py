@@ -6,8 +6,6 @@ from tikr.DBUtils import create_database
 from tikr.scraper import TIKR
 from tikr.utils import bcolors
 
-create_database()
-
 def main():
     """Command line entry point for the scraper."""
     test_mode = int(os.environ.get('TIKR_TEST_MODE'))

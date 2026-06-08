@@ -59,8 +59,6 @@ def get_client_ip():
     return request.remote_addr
 
 
-create_database()
-
 # =====================================================
 # ✅ Common functions
 # =====================================================
