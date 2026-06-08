@@ -439,14 +439,21 @@ class TIKR:
                 exported_files.append(output_path)
 
         elif export_format == 'db':
+            total_stats = {'inserted': 0, 'updated': 0, 'unchanged': 0, 'skipped': 0}
             for statement in self.statements:
                 statement_name = statement['statement']
                 rows = self.content.get(statement_name, [])
                 if not rows:
                     continue
 
-                insert_or_update_data(statement_name, rows)
-            print(f'[ + ] Data inserted into the database successfully.')
+                stats = insert_or_update_data(statement_name, rows)
+                for k in total_stats:
+                    total_stats[k] += stats.get(k, 0)
+
+            print(f'[ + ] DB: {total_stats["inserted"]} insertados, '
+                  f'{total_stats["updated"]} actualizados, '
+                  f'{total_stats["unchanged"]} sin cambios, '
+                  f'{total_stats["skipped"]} descartados.')
             exported_files = ['database']
 
         return exported_files

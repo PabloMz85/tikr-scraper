@@ -39,13 +39,103 @@ def get_connection() -> mariadb.Connection:
         raise ConnectionError(f"No se pudo conectar a la base de datos: {e}") from e
 
 
-def insert_or_update_data(table: str, data: List[dict]) -> None:
+def _values_equal(db_val, new_val) -> bool:
+    """
+    Compara dos valores de forma segura, normalizando:
+    - None y '' se consideran iguales (vacio)
+    - floats se comparan con tolerancia de 0.01 (por redondeo de punto flotante)
+    - ints y strings se comparan directamente
+    """
+    # Normalizar vacios
+    db_empty = db_val is None or db_val == ''
+    new_empty = new_val is None or new_val == ''
+    if db_empty and new_empty:
+        return True
+    if db_empty != new_empty:
+        return False
+
+    # Ambos no vacios: comparar
+    try:
+        db_float = float(db_val)
+        new_float = float(new_val)
+        return abs(db_float - new_float) < 0.005
+    except (TypeError, ValueError):
+        return db_val == new_val
+
+
+def record_exists_and_unchanged(table: str, record: dict) -> bool:
+    """
+    Verifica si un registro (company + year) ya existe en la tabla
+    con exactamente los mismos valores. Retorna True si no hace falta
+    actualizar (datos identicos).
+    """
+    company = record.get("company")
+    year = record.get("year")
+
+    if not company or not year:
+        return False
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Obtener las columnas de la tabla (excluyendo updated_at)
+        cursor.execute("""
+            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+            AND COLUMN_NAME NOT IN ('updated_at')
+            ORDER BY ORDINAL_POSITION
+        """, (table,))
+        columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+
+        if not columns:
+            return False
+
+        # Buscar el registro existente
+        cursor.execute(
+            f"SELECT * FROM {table} WHERE company = ? AND year = ?",
+            (company, year)
+        )
+        existing = cursor.fetchone()
+
+        if existing is None:
+            # No existe -> hay que insertarlo
+            return False
+
+        # Comparar cada campo (ignorando company/year que son la PK y updated_at)
+        compare_cols = [c for c in columns if c not in ('company', 'year')]
+        for col in compare_cols:
+            db_val = existing.get(col)
+            new_val = record.get(col)
+
+            if not _values_equal(db_val, new_val):
+                # Hay al menos un cambio -> hay que actualizar
+                return False
+
+        # Todos los campos son identicos
+        return True
+
+    except mariadb.Error as e:
+        print(f"Error comparando registro en {table}: {e}", file=sys.stderr)
+        # En caso de error, mejor actualizar por las dudas
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def insert_or_update_data(table: str, data: List[dict]) -> dict:
     """
     Inserta o actualiza registros en la tabla especificada.
     Utiliza la directiva 'ON DUPLICATE KEY UPDATE' propia de MariaDB.
+    Antes de insertar/actualizar, verifica si el registro ya existe
+    con los mismos valores para evitar escrituras innecesarias.
+    Retorna un dict con estadisticas: {'inserted': N, 'updated': N, 'unchanged': N, 'skipped': N}
     """
+    stats = {'inserted': 0, 'updated': 0, 'unchanged': 0, 'skipped': 0}
+
     if not data:
-        return
+        return stats
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -56,13 +146,19 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
 
         if not company or not year:
             print(f"Registro descartado. Faltan claves primarias (company o year): {record}")
+            stats['skipped'] += 1
             continue
 
-        # Generar dinámicamente los nombres de columnas y placeholders
+        # Verificar si el registro ya existe y no cambio
+        if record_exists_and_unchanged(table, record):
+            stats['unchanged'] += 1
+            continue
+
+        # Generar dinamicamente los nombres de columnas y placeholders
         columns = ', '.join(record.keys())
         placeholders = ', '.join(['?'] * len(record))
 
-        # Construir la cláusula de actualización para MariaDB: columna = VALUES(columna)
+        # Construir la clausula de actualizacion para MariaDB: columna = VALUES(columna)
         update_cols = [col for col in record.keys() if col not in ("company", "year")]
         update_clause = ', '.join([f"{col}=VALUES({col})" for col in update_cols])
 
@@ -74,12 +170,20 @@ def insert_or_update_data(table: str, data: List[dict]) -> None:
         """
         try:
             cursor.execute(sql, tuple(record.values()))
+            # MariaDB: info() retorna "Records: N Duplicates: M Warnings: N" en INSERT...ON DUPLICATE
+            info = conn.info() if hasattr(conn, 'info') else ''
+            if info and 'Duplicates' in info and int(info.split('Duplicates: ')[1].split()[0]) > 0:
+                stats['updated'] += 1
+            else:
+                stats['inserted'] += 1
         except mariadb.Error as e:
             print(f"Error ejecutando UPSERT en {table}: {e}", file=sys.stderr)
 
     conn.commit()
     cursor.close()
     conn.close()
+
+    return stats
 
 
 def list_users() -> list:

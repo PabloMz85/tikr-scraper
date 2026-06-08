@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS income_statement (
     market_cap DOUBLE,
     price_close DOUBLE,
     TEV DOUBLE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (company, year)
 );
 
@@ -118,6 +119,7 @@ CREATE TABLE IF NOT EXISTS cashflow_statement (
     cash_interest_paid DOUBLE,
     cash_taxes_paid DOUBLE,
     cash_flow_per_share DOUBLE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (company, year)
 );
 
@@ -188,6 +190,7 @@ CREATE TABLE IF NOT EXISTS balancesheet_statement (
     buildings DOUBLE,
     construction_in_progress DOUBLE,
     full_time_employees DOUBLE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (company, year)
 );
 
@@ -252,6 +255,7 @@ CREATE TABLE IF NOT EXISTS multiples_statement (
     ltm_unlevered_free_cash_flow DOUBLE,
     ltm_levered_free_cash_flow DOUBLE,
     ltm_net_current_asset_value_per_share DOUBLE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (company, year)
 );
 
