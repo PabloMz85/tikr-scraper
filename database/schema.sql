@@ -261,18 +261,25 @@ CREATE TABLE IF NOT EXISTS multiples_statement (
 
 -- 5. Tabla: approved_users
 CREATE TABLE IF NOT EXISTS approved_users (
-    user_number VARCHAR(255) PRIMARY KEY,
+    user_name VARCHAR(255) PRIMARY KEY,
     active TINYINT DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     blocked_at DATETIME NULL,
     released_at DATETIME NULL
 );
 
+-- 6. Tabla: users_block_history
+CREATE TABLE IF NOT EXISTS user_block_history (
+    user_name VARCHAR(255) NOT NULL,
+    blocked_at DATETIME NULL,
+    released_at DATETIME NULL
+);
+
 -- 6. Tabla: users_log
 CREATE TABLE IF NOT EXISTS users_log (
-    user_number VARCHAR(255) NOT NULL,
+    user_name VARCHAR(255) NOT NULL,
     ip_address VARCHAR(45) NOT NULL,
     token TEXT,
     logged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_user_number (user_number)
+    INDEX idx_user_name (user_name)
 );

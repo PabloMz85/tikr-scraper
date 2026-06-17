@@ -68,7 +68,7 @@ def _get_common_data(request):
     ticker = data.get("asset") or request.form.get("asset") or request.args.get("asset")
     token = data.get("token") or request.form.get("token") or request.args.get("token")
     with_actual_year_included = data.get("with_actual_year_included") or request.form.get("with_actual_year_included") or request.args.get("with_actual_year_included")
-    user_number = data.get("user_number") or request.form.get("user_number") or request.args.get("user_number")
+    user_name = data.get("user_name") or request.form.get("user_name") or request.args.get("user_name")
 
     # Default to 1 if not provided (wich not includes the actual year), but if provided, must be 0 or 1
     # They need to be switched
@@ -84,14 +84,14 @@ def _get_common_data(request):
     if production_mode == 1:
         if not token:
             raise {"error": "Se requiere 'token'.", "error_number": 400}
-        if not user_number:
-            raise {"error": "Se requiere 'user_number'.", "error_number": 400}
-        if not is_user_approved(user_number):
+        if not user_name:
+            raise {"error": "Se requiere 'user_name'.", "error_number": 400}
+        if not is_user_approved(user_name):
             raise {"error": "Usuario no autorizado", "error_number": 403}
         if (with_actual_year_included not in [0,1]):
             raise {"error": "'with_actual_year_included' debe ser 0 o 1.", "error_number": 400}
     
-    return [user_number, token, ticker, with_actual_year_included]
+    return [user_name, token, ticker, with_actual_year_included]
 
 
 def normalizar_claves_json(objeto: any) -> any:
@@ -140,7 +140,7 @@ def get_company_info():
 @app.route("/v0.1/getAssetExcel", methods=["POST"])
 def get_asset_excel():
     try:
-        [user_number, token, ticker, with_actual_year_included] = _get_common_data(request)
+        [user_name, token, ticker, with_actual_year_included] = _get_common_data(request)
     except e:
         return jsonify({"error": e.error}), e.error_number
 
@@ -149,7 +149,7 @@ def get_asset_excel():
             temp_file_path = tmp.name
 
         client_ip = get_client_ip()
-        log_user_activity(user_number, client_ip, token)
+        log_user_activity(user_name, client_ip, token)
         
         scraper = TIKR(test_mode, production_mode)
         scraper.set_token(token)
@@ -194,13 +194,13 @@ def get_asset_excel():
 @app.route("/v0.1/getAssetJSON", methods=["POST"])
 def get_asset_json():
     try:
-        [user_number, token, ticker, with_actual_year_included] = _get_common_data(request)
+        [user_name, token, ticker, with_actual_year_included] = _get_common_data(request)
     except e:
         return jsonify({"error": e.error}), e.error_number
 
     try:
         client_ip = get_client_ip()
-        log_user_activity(user_number, client_ip, token)
+        log_user_activity(user_name, client_ip, token)
         
         scraper = TIKR(test_mode, production_mode)
         scraper.set_token(token)
@@ -264,18 +264,18 @@ def listUsers():
 @app.route("/v0.1/createApprovedUser", methods=["POST"])
 def createApprovedUser():
     data = request.get_json(silent=True) or {}
-    user_number = data.get("user_number") or request.form.get("user_number") or request.args.get("user_number")
+    user_name = data.get("user_name") or request.form.get("user_name") or request.args.get("user_name")
     super_admin_pass = data.get("super_admin_pass") or request.form.get("super_admin_pass") or request.args.get("super_admin_pass")
     print(super_admin_pass)
     print(os.getenv("SUPER_USER_PASS"))
     if super_admin_pass != os.getenv("SUPER_USER_PASS"):
         return jsonify({"error": "Acceso denegado."}), 403
 
-    if not user_number:
-        return jsonify({"error": "Se requiere 'user_number'."}), 400
+    if not user_name:
+        return jsonify({"error": "Se requiere 'user_name'."}), 400
     try:
-        add_approved_user(user_number)
-        return jsonify({"message": f"Usuario {user_number} creado exitosamente."}), 200
+        add_approved_user(user_name)
+        return jsonify({"message": f"Usuario {user_name} creado exitosamente."}), 200
     except ConnectionError as e:
         # El servidor web no se cae, responde un HTTP 503 elegante
         return {"error": "Servicio temporalmente no disponible", "details": str(e)}, 503
@@ -286,18 +286,18 @@ def createApprovedUser():
 @app.route("/v0.1/blockUser", methods=["POST"])
 def blockUser():
     data = request.get_json(silent=True) or {}
-    user_number = data.get("user_number") or request.form.get("user_number") or request.args.get("user_number")
+    user_name = data.get("user_name") or request.form.get("user_name") or request.args.get("user_name")
     super_admin_pass = data.get("super_admin_pass") or request.form.get("super_admin_pass") or request.args.get("super_admin_pass")
     print(super_admin_pass)
     print(os.getenv("SUPER_USER_PASS"))
     if super_admin_pass != os.getenv("SUPER_USER_PASS"):
         return jsonify({"error": "Acceso denegado."}), 403
     
-    if not user_number:
-        return jsonify({"error": "Se requiere 'user_number'."}), 400
+    if not user_name:
+        return jsonify({"error": "Se requiere 'user_name'."}), 400
     try:
-        block_user(user_number)
-        return jsonify({"message": f"Usuario {user_number} bloqueado exitosamente."}), 200
+        block_user(user_name)
+        return jsonify({"message": f"Usuario {user_name} bloqueado exitosamente."}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Error interno: {str(e)}"}), 500
@@ -306,18 +306,18 @@ def blockUser():
 @app.route("/v0.1/unblockUser", methods=["POST"])
 def unblockUser():
     data = request.get_json(silent=True) or {}
-    user_number = data.get("user_number") or request.form.get("user_number") or request.args.get("user_number")
+    user_name = data.get("user_name") or request.form.get("user_name") or request.args.get("user_name")
     super_admin_pass = data.get("super_admin_pass") or request.form.get("super_admin_pass") or request.args.get("super_admin_pass")
     print(super_admin_pass)
     print(os.getenv("SUPER_USER_PASS"))
     if super_admin_pass != os.getenv("SUPER_USER_PASS"):
         return jsonify({"error": "Acceso denegado."}), 403
     
-    if not user_number:
-        return jsonify({"error": "Se requiere 'user_number'."}), 400
+    if not user_name:
+        return jsonify({"error": "Se requiere 'user_name'."}), 400
     try:
-        unblock_user(user_number)
-        return jsonify({"message": f"Usuario {user_number} desbloqueado exitosamente."}), 200
+        unblock_user(user_name)
+        return jsonify({"message": f"Usuario {user_name} desbloqueado exitosamente."}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f"Error interno: {str(e)}"}), 500

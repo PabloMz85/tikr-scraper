@@ -217,11 +217,11 @@ def list_users() -> list:
         conn.close()
 
 
-def is_user_approved(user_number: str) -> bool:
+def is_user_approved(user_name: str) -> bool:
     """
     Verifica si un user_number existe y posee el estado activo (1).
     """
-    if not user_number:
+    if not user_name:
         return False
         
     conn = get_connection()
@@ -229,8 +229,8 @@ def is_user_approved(user_number: str) -> bool:
     
     try:
         cursor.execute(
-            "SELECT 1 FROM approved_users WHERE user_number = ? AND active = 1", 
-            (user_number,)
+            "SELECT 1 FROM approved_users WHERE user_name = ? AND active = 1", 
+            (user_name,)
         )
         row = cursor.fetchone()
         return row is not None
@@ -242,12 +242,12 @@ def is_user_approved(user_number: str) -> bool:
         conn.close()
 
 
-def add_approved_user(user_number: str) -> None:
+def add_approved_user(user_name: str) -> None:
     """
     Registra un nuevo usuario. Utiliza 'INSERT IGNORE' para garantizar la idempotencia,
     evitando excepciones si la clave primaria ya existe.
     """
-    if not user_number:
+    if not user_name:
         return
         
     conn = get_connection()
@@ -256,8 +256,8 @@ def add_approved_user(user_number: str) -> None:
     
     try:
         cursor.execute(
-            "INSERT IGNORE INTO approved_users (user_number, active, created_at) VALUES (?, 1, ?)", 
-            (user_number, created_at)
+            "INSERT IGNORE INTO approved_users (user_name, active, created_at) VALUES (?, 1, ?)", 
+            (user_name, created_at)
         )
         conn.commit()
     except mariadb.Error as e:
@@ -266,12 +266,12 @@ def add_approved_user(user_number: str) -> None:
         cursor.close()
         conn.close()
 
-def block_user(user_number: str) -> None:
+def block_user(user_name: str) -> None:
     """
     Bloquea el acceso a un usuario modificando su estado y registrando el instante del bloqueo.
     Corrección aplicada: Sustitución de 'AND' por coma en la cláusula SET.
     """
-    if not user_number:
+    if not user_name:
         return
         
     conn = get_connection()
@@ -281,7 +281,11 @@ def block_user(user_number: str) -> None:
     try:
         cursor.execute(
             "UPDATE approved_users SET active = 0, blocked_at = ? WHERE user_number = ?", 
-            (blocked_at, user_number)
+            (blocked_at, user_name)
+        )
+        cursor.execute(
+            "INSERT IGNORE INTO user_block_history (user_number, blocked_at) VALUES (?, ?)", 
+            (user_name, blocked_at)
         )
         conn.commit()
     except mariadb.Error as e:
@@ -291,13 +295,13 @@ def block_user(user_number: str) -> None:
         conn.close()
 
 
-def unblock_user(user_number: str) -> None:
+def unblock_user(user_name: str) -> None:
     """
     Restituye el acceso a un usuario y registra el instante de la liberación.
     Corrección aplicada: Alineación de la columna (released_at en lugar de unblocked_at)
     y reparación de sintaxis SQL en el SET.
     """
-    if not user_number:
+    if not user_name:
         return
         
     conn = get_connection()
@@ -306,8 +310,12 @@ def unblock_user(user_number: str) -> None:
     
     try:
         cursor.execute(
-            "UPDATE approved_users SET active = 1, released_at = ? WHERE user_number = ?", 
-            (released_at, user_number)
+            "UPDATE approved_users SET active = 1, released_at = ? WHERE user_name = ?", 
+            (released_at, user_name)
+        )
+        cursor.execute(
+            "UPDATE user_block_history SET released_at = ? WHERE user_name = ? and released_at = NULL", 
+            (released_at, user_name)
         )
         conn.commit()
     except mariadb.Error as e:
@@ -317,11 +325,11 @@ def unblock_user(user_number: str) -> None:
         conn.close()
 
 
-def log_user_activity(user_number: str, ip_address: str, token: str) -> None:
+def log_user_activity(user_name: str, ip_address: str, token: str) -> None:
     """
     Registra en la bitácora la actividad del usuario validado en el sistema.
     """
-    if not user_number or not ip_address:
+    if not user_name or not ip_address:
         return
         
     conn = get_connection()
@@ -330,8 +338,8 @@ def log_user_activity(user_number: str, ip_address: str, token: str) -> None:
     
     try:
         cursor.execute(
-            "INSERT INTO users_log (user_number, ip_address, token, logged_at) VALUES (?, ?, ?, ?)", 
-            (user_number, ip_address, token, timestamp)
+            "INSERT INTO users_log (user_name, ip_address, token, logged_at) VALUES (?, ?, ?, ?)", 
+            (user_name, ip_address, token, timestamp)
         )
         conn.commit()
     except mariadb.Error as e:
