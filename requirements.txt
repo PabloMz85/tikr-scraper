@@ -6,6 +6,8 @@ webdriver-manager==4.1.2
 xlsxwriter==3.2.9
 openpyxl==3.1.5
 mariadb==1.1.14
+SQLAlchemy==2.0.52
+alembic==1.19.1
 
 # Evitar error: AttributeError: 'X509' object has no attribute 'get_extension'
 pyOpenSSL==23.2.0

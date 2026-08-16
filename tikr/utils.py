@@ -61,6 +61,9 @@ class scraper_utils:
         else:
 
             # Locate Chrome binary
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+
             chrome_bin = os.environ.get("CHROME_BIN")
             for candidate in [chrome_bin, "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"]:
                 if candidate and os.path.exists(candidate):
@@ -72,7 +75,9 @@ class scraper_utils:
             # Use existing driver if available
             driver_path = "/usr/local/bin/chromedriver"
             if not os.path.exists(driver_path):
-                raise FileNotFoundError("ChromeDriver not found. Please install it under /usr/local/bin/.")
+                driver_path = "/usr/bin/chromedriver"
+            if not os.path.exists(driver_path):
+                raise FileNotFoundError("ChromeDriver not found. Please install it under /usr/local/bin/ or /usr/bin/.")
 
             service = Service(driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)

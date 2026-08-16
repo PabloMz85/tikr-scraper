@@ -374,6 +374,7 @@ class TIKR:
         timestamp = datetime.now().strftime('%Y-%m-%d')
         base_filename = f"tests/results/{asset}_{timestamp}"
         base_name = os.path.splitext(base_filename)[0]
+        os.makedirs(os.path.dirname(base_filename), exist_ok=True)
 
         if (export_format != 'db') :
             frames = {}
@@ -400,6 +401,7 @@ class TIKR:
 
         if export_format == 'xlsx':
             output_path = f"{base_name}.xlsx"
+            print(output_path)
             with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
                 for statement_name, df in frames.items():
                     df_transposed = df.T

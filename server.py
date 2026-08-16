@@ -1,7 +1,7 @@
 from flask import Flask, request, send_file, jsonify, json
 from tikr.scraper import TIKR
 from tikr.utils import scraper_utils
-from tikr.DBUtils import list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity
+from tikr.DBUtils import list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity, ensure_schema, ensure_default_admin_user
 
 import os
 import shutil
@@ -59,6 +59,14 @@ def get_client_ip():
     return request.remote_addr
 
 
+class APIError(Exception):
+    """Excepción para errores de API que incluye el código HTTP a devolver."""
+    def __init__(self, error, error_number):
+        super().__init__(error)
+        self.error = error
+        self.error_number = error_number
+
+
 # =====================================================
 # ✅ Common functions
 # =====================================================
@@ -79,17 +87,17 @@ def _get_common_data(request):
         with_actual_year_included = 0 if with_actual_year_included == 1 else 1
 
     if not ticker:
-        raise {"error": "Se requiere 'asset'.", "error_number": 400}
+        raise APIError("Se requiere 'asset'.", 400)
 
     if production_mode == 1:
         if not token:
-            raise {"error": "Se requiere 'token'.", "error_number": 400}
+            raise APIError("Se requiere 'token'.", 400)
         if not user_name:
-            raise {"error": "Se requiere 'user_name'.", "error_number": 400}
+            raise APIError("Se requiere 'user_name'.", 400)
         if not is_user_approved(user_name):
-            raise {"error": "Usuario no autorizado", "error_number": 403}
+            raise APIError("Usuario no autorizado", 403)
         if (with_actual_year_included not in [0,1]):
-            raise {"error": "'with_actual_year_included' debe ser 0 o 1.", "error_number": 400}
+            raise APIError("'with_actual_year_included' debe ser 0 o 1.", 400)
     
     return [user_name, token, ticker, with_actual_year_included]
 
@@ -141,8 +149,11 @@ def get_company_info():
 def get_asset_excel():
     try:
         [user_name, token, ticker, with_actual_year_included] = _get_common_data(request)
-    except e:
+    except APIError as e:
         return jsonify({"error": e.error}), e.error_number
+    except ConnectionError as e:
+        traceback.print_exc()
+        return jsonify({"error": "Servicio temporalmente no disponible", "details": str(e)}), 503
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -155,7 +166,7 @@ def get_asset_excel():
         scraper.set_token(token)
 
         if test_mode == 0:
-            tid, cid = scraper.find_company_info(ticker)
+            tid, cid = scraper.find_company_info(ticker, user_id)
         else:
             tid, cid = 2590360, 24937  # Apple Inc.
 
@@ -195,8 +206,11 @@ def get_asset_excel():
 def get_asset_json():
     try:
         [user_name, token, ticker, with_actual_year_included] = _get_common_data(request)
-    except e:
+    except APIError as e:
         return jsonify({"error": e.error}), e.error_number
+    except ConnectionError as e:
+        traceback.print_exc()
+        return jsonify({"error": "Servicio temporalmente no disponible", "details": str(e)}), 503
 
     try:
         client_ip = get_client_ip()
@@ -329,5 +343,10 @@ def unblockUser():
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.getenv("PORT", 5050))
+    try:
+        ensure_schema()
+        ensure_default_admin_user()
+    except Exception as e:
+        print(f"⚠️ No se pudo verificar el esquema de la BD al iniciar: {e}", file=sys.stderr)
     print(f"🚀 Servidor Flask en modo PRODUCCIÓN con Waitress: http://0.0.0.0:{port}")
     serve(app, host="0.0.0.0", port=port)

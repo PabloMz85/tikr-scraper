@@ -15,20 +15,43 @@ RUN apt-get update && apt-get install -y \
     libnss3 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
-    libx11-6 \
-    libxrandr2 \
     libgbm1 \
-    libxss1 \
-    libxcursor1 \
-    libxcomposite1 \
-    libasound2 \
-    libatk1.0-0 \
-    libxdamage1 \
+    libmariadb-dev \
     fonts-liberation \
     ca-certificates \
     gcc \
-    libmariadb-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# El paquete chromium-driver instala chromedriver en /usr/bin/chromedriver,
+# pero el código también lo busca en /usr/local/bin/chromedriver
+RUN ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+
+ENV MARIADB_CONFIG=/usr/bin/mariadb_config
+#RUN apt-get update && apt-get install -y \
+#    wget \
+#    unzip \
+#    curl \
+#    gnupg \
+#    chromium \
+#    chromium-driver \
+#    libnss3 \
+#    libatk-bridge2.0-0 \
+#    libgtk-3-0 \
+#    libx11-6 \
+#    libxrandr2 \
+#    libgbm1 \
+#    libxss1 \
+#    libxcursor1 \
+#    libxcomposite1 \
+#    libasound2 \
+#    libatk1.0-0 \
+#    libxdamage1 \
+#    fonts-liberation \
+#    ca-certificates \
+#    gcc \
+#    libmariadb-dev \
+#    && rm -rf /var/lib/apt/lists/*
 
 # Copiamos solo los archivos necesarios para instalar dependencias
 COPY requirements.txt .
@@ -38,6 +61,11 @@ COPY tikr/ tikr/
 COPY plantillas/ plantillas/
 COPY server.py .
 COPY keys.py .
+
+# Alembic + migrations (los modelos viven en database/)
+COPY alembic.ini .
+COPY alembic/ alembic/
+COPY database/ database/
 
 # Instalamos las dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt

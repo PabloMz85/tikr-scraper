@@ -39,6 +39,65 @@ def get_connection() -> mariadb.Connection:
         raise ConnectionError(f"No se pudo conectar a la base de datos: {e}") from e
 
 
+def ensure_schema() -> None:
+    """
+    Ejecuta database/schema.sql (idempotente: CREATE TABLE IF NOT EXISTS)
+    para crear las tablas faltantes en bases de datos existentes.
+    """
+    schema_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "database", "schema.sql"
+    )
+    if not os.path.exists(schema_path):
+        logging.warning(f"Schema SQL no encontrado: {schema_path}")
+        return
+
+    with open(schema_path, "r", encoding="utf-8") as f:
+        statements = [s.strip() for s in f.read().split(";") if s.strip()]
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        for statement in statements:
+            cursor.execute(statement)
+        conn.commit()
+    except mariadb.Error as e:
+        conn.rollback()
+        raise ConnectionError(f"No se pudo inicializar el esquema: {e}") from e
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def ensure_default_admin_user() -> None:
+    """
+    Asegura que el usuario administrador por defecto (DEFAULT_ADMIN_USERNAME)
+    exista en approved_users con estado activo, igual que hace el web-backend
+    al crearse el contenedor. Es idempotente (INSERT IGNORE).
+    """
+    default_admin = os.environ.get("DEFAULT_ADMIN_USERNAME")
+    if not default_admin:
+        return
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    created_at = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        cursor.execute(
+            "INSERT IGNORE INTO approved_users (user_name, active, created_at) VALUES (?, 1, ?)",
+            (default_admin, created_at)
+        )
+        conn.commit()
+        print(f"[DB] Usuario administrador por defecto asegurado: {default_admin}")
+    except mariadb.Error as e:
+        conn.rollback()
+        print(f"Error asegurando usuario administrador: {e}", file=sys.stderr)
+        raise ConnectionError(f"No se pudo registrar el usuario administrador '{default_admin}': {e}") from e
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def record_exists_and_unchanged(table: str, record: dict) -> bool:
     """
     Verifica si el registro ya existe en la tabla con los mismos valores.
@@ -179,7 +238,6 @@ def insert_or_update_data(table: str, data: List[dict]) -> dict:
             ON DUPLICATE KEY UPDATE
             {update_clause};
         """
-        print('Consulta a ejecutar: ' + sql)
         try:
             cursor.execute(sql, tuple(record.values()))
             # MariaDB: info() retorna "Records: N Duplicates: M Warnings: N" en INSERT...ON DUPLICATE
@@ -236,7 +294,7 @@ def is_user_approved(user_name: str) -> bool:
         return row is not None
     except mariadb.Error as e:
         print(f"Error verificando aprobación: {e}", file=sys.stderr)
-        return False
+        raise ConnectionError(f"Error de BD al verificar aprobación de '{user_name}': {e}") from e
     finally:
         cursor.close()
         conn.close()
@@ -280,11 +338,11 @@ def block_user(user_name: str) -> None:
     
     try:
         cursor.execute(
-            "UPDATE approved_users SET active = 0, blocked_at = ? WHERE user_number = ?", 
+            "UPDATE approved_users SET active = 0, blocked_at = ? WHERE user_name = ?", 
             (blocked_at, user_name)
         )
         cursor.execute(
-            "INSERT IGNORE INTO user_block_history (user_number, blocked_at) VALUES (?, ?)", 
+            "INSERT IGNORE INTO user_block_history (user_name, blocked_at) VALUES (?, ?)", 
             (user_name, blocked_at)
         )
         conn.commit()
@@ -314,7 +372,7 @@ def unblock_user(user_name: str) -> None:
             (released_at, user_name)
         )
         cursor.execute(
-            "UPDATE user_block_history SET released_at = ? WHERE user_name = ? and released_at = NULL", 
+            "UPDATE user_block_history SET released_at = ? WHERE user_name = ? and released_at IS NULL", 
             (released_at, user_name)
         )
         conn.commit()
