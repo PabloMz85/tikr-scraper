@@ -2,6 +2,7 @@ from flask import Flask, request, send_file, jsonify, json
 from tikr.scraper import TIKR
 from tikr.utils import scraper_utils
 from tikr.DBUtils import list_users, is_user_approved, add_approved_user, block_user, unblock_user, log_user_activity, ensure_schema, ensure_default_admin_user
+from token_manager import ensure_valid_token
 
 import os
 import shutil
@@ -67,6 +68,20 @@ class APIError(Exception):
         self.error_number = error_number
 
 
+def _find_company(scraper, ticker):
+    """Resolve (tid, cid) for a ticker.
+
+    Raises APIError(503) when the search service (Algolia) is unreachable.
+    Returns (None, None) when no company matches the ticker.
+    """
+    if test_mode != 0:
+        return 2590360, 24937  # Apple Inc.
+    result = scraper.find_company_info(ticker, user_id)
+    if result is None:
+        raise APIError("Servicio de búsqueda no disponible, inténtalo nuevamente en un momento", 503)
+    return result
+
+
 # =====================================================
 # ✅ Common functions
 # =====================================================
@@ -75,7 +90,13 @@ def _get_common_data(request):
     data = request.get_json(silent=True) or {}
     ticker = data.get("asset") or request.form.get("asset") or request.args.get("asset")
     token = data.get("token") or request.form.get("token") or request.args.get("token")
-    with_actual_year_included = data.get("with_actual_year_included") or request.form.get("with_actual_year_included") or request.args.get("with_actual_year_included")
+    # Each source is checked with `is None` (not `or`) so an explicit 0 is not
+    # mistaken for a missing parameter and replaced by the default.
+    with_actual_year_included = data.get("with_actual_year_included")
+    if with_actual_year_included is None:
+        with_actual_year_included = request.form.get("with_actual_year_included")
+    if with_actual_year_included is None:
+        with_actual_year_included = request.args.get("with_actual_year_included")
     user_name = data.get("user_name") or request.form.get("user_name") or request.args.get("user_name")
 
     # Default to 1 if not provided (wich not includes the actual year), but if provided, must be 0 or 1
@@ -133,16 +154,53 @@ def get_company_info():
 
     scraper = TIKR(test_mode, production_mode)
     scraper.set_token(token)
-    
-    if test_mode == 0:
-        tid, cid = scraper.find_company_info(ticker, user_id)
-    else:
-        tid, cid = 2590360, 24937  # Apple Inc.
-    
+
+    try:
+        tid, cid = _find_company(scraper, ticker)
+    except APIError as e:
+        traceback.print_exc()
+        return jsonify({"error": e.error}), e.error_number
+
     if not (tid and cid):
         return jsonify({"error": "No se encontró la compañía"}), 404
-    
+
     return jsonify({"tid": tid, "cid": cid}), 200
+
+
+@app.route("/v0.1/getLastPrice", methods=["GET"])
+def get_last_price():
+    ticker = request.args.get("asset")
+    token = request.args.get("token")
+    if not ticker:
+        return jsonify({"error": "Se requiere 'asset'."}), 400
+
+    try:
+        scraper = TIKR(test_mode, production_mode)
+        scraper.set_token(token)
+
+        tid, cid = _find_company(scraper, ticker)
+
+        if not (tid and cid):
+            return jsonify({"error": "No se encontró la compañía"}), 404
+
+        last_quote = scraper_utils.get_last_quote_data(scraper.access_token, scraper.headers, tid, cid, test_mode)
+        if not last_quote or not last_quote.get('last'):
+            return jsonify({"error": "No se pudo obtener el precio"}), 500
+
+        last_price = last_quote.get('last')[0].get('latestPrice', '')
+        if last_price == '':
+            return jsonify({"error": "No se pudo obtener el precio"}), 500
+
+        return jsonify({"ticker": ticker, "price": round(float(last_price), 2)}), 200
+
+    except APIError as e:
+        traceback.print_exc()
+        return jsonify({"error": e.error}), e.error_number
+    except RuntimeError as e:
+        return jsonify({"error": f"Token inválido o expirado: {str(e)}"}), 401
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Error interno: {str(e)}"}), 500
 
 
 @app.route("/v0.1/getAssetExcel", methods=["POST"])
@@ -165,10 +223,7 @@ def get_asset_excel():
         scraper = TIKR(test_mode, production_mode)
         scraper.set_token(token)
 
-        if test_mode == 0:
-            tid, cid = scraper.find_company_info(ticker, user_id)
-        else:
-            tid, cid = 2590360, 24937  # Apple Inc.
+        tid, cid = _find_company(scraper, ticker)
 
         if not (tid and cid):
             return jsonify({"error": "No se encontró la compañía"}), 404
@@ -194,6 +249,9 @@ def get_asset_excel():
 
         return send_file(temp_file_path, as_attachment=True, download_name=f"Plantilla_TIKR_{ticker}.xlsx")
 
+    except APIError as e:
+        traceback.print_exc()
+        return jsonify({"error": e.error}), e.error_number
     except RuntimeError as e:
         traceback.print_exc()
         return jsonify({"error": f"Token inválido o expirado: {str(e)}"}), 401
@@ -219,10 +277,7 @@ def get_asset_json():
         scraper = TIKR(test_mode, production_mode)
         scraper.set_token(token)
 
-        if test_mode == 0:
-            tid, cid = scraper.find_company_info(ticker, user_id)
-        else:
-            tid, cid = 2590360, 24937  # Apple Inc.
+        tid, cid = _find_company(scraper, ticker)
 
         if not (tid and cid):
             return jsonify({"error": "No se encontró la compañía"}), 404
@@ -240,6 +295,9 @@ def get_asset_json():
         )
         return response
 
+    except APIError as e:
+        traceback.print_exc()
+        return jsonify({"error": e.error}), e.error_number
     except RuntimeError as e:
         traceback.print_exc()
         return jsonify({"error": f"Token inválido o expirado: {str(e)}"}), 401
@@ -251,7 +309,7 @@ def get_asset_json():
 @app.route("/v0.1/generateToken", methods=["POST"])
 def generateToken():
     try:
-        token = scraper_utils.get_access_token()
+        token = ensure_valid_token()
         return jsonify({"token": token }), 200
     except Exception as e:
         traceback.print_exc()

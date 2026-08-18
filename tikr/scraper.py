@@ -6,7 +6,16 @@ import json
 import keys
 import requests
 import os
+import sys
+import time
+import traceback
 import pandas as pd
+
+
+# Sentinel year under which the LTM row is persisted so it does not collide with
+# the current-year row under the (company, year) cache key. Exporters already
+# relabel the last row as 'LTM'.
+LTM_YEAR_SENTINEL = 9999
 
 
 class TIKR:
@@ -31,6 +40,8 @@ class TIKR:
             'Sec-Fetch-Site': 'cross-site'
         }
         self.statements = keys.statements
+        self.statements_config = self.statements
+        self.period_end_dates = {}
         self.content = {
             'income_statement': [],
             'cashflow_statement': [],
@@ -98,42 +109,56 @@ class TIKR:
         )
 
         # 4. Ejecución de la Petición
-        try:
-            response = requests.post(url, headers=headers, data=data)
-            
-            # Validación de la respuesta
-            response.raise_for_status() 
-            
-            datos_json = response.json()
+        # Se reintenta una vez ante fallos transitorios de red/DNS.
+        last_error = None
+        for attempt in range(2):
+            try:
+                response = requests.post(url, headers=headers, data=data, timeout=15)
 
-            # 1. Acceso al nodo principal 'results' de manera segura
-            lista_resultados = datos_json.get('results', [])
-            
-            if lista_resultados and len(lista_resultados) > 0:
-                # 2. Aislamiento del primer diccionario dentro del arreglo 'results'
-                nodo_primario = lista_resultados[0]
-                
-                # 3. Acceso seguro al sub-arreglo 'hits'
-                hits = nodo_primario.get('hits', [])
-                
-                # 4. Evaluación de la existencia de registros válidos
-                if hits and len(hits) > 0:
-                    primer_registro = hits[0]
-                    
-                    # 5. Extracción de las variables de interés
-                    tid = primer_registro.get('tradingitemid')
-                    cid = primer_registro.get('companyid')
-                    
-                    return tid, cid
-                    
-            # Retorno por defecto en caso de estructura inválida o vacía
-            return None, None
-            
-        except requests.exceptions.HTTPError as err_http:
-            print(f"Error HTTP: {err_http}")
-            print(f"Cuerpo de la respuesta: {response.text}")
-        except Exception as e:
-            print(f"Error general de ejecución: {e}")
+                # Validación de la respuesta
+                response.raise_for_status()
+
+                datos_json = response.json()
+
+                # 1. Acceso al nodo principal 'results' de manera segura
+                lista_resultados = datos_json.get('results', [])
+
+                if lista_resultados and len(lista_resultados) > 0:
+                    # 2. Aislamiento del primer diccionario dentro del arreglo 'results'
+                    nodo_primario = lista_resultados[0]
+
+                    # 3. Acceso seguro al sub-arreglo 'hits'
+                    hits = nodo_primario.get('hits', [])
+
+                    # 4. Evaluación de la existencia de registros válidos
+                    if hits and len(hits) > 0:
+                        primer_registro = hits[0]
+
+                        # 5. Extracción de las variables de interés
+                        tid = primer_registro.get('tradingitemid')
+                        cid = primer_registro.get('companyid')
+
+                        return tid, cid
+
+                # Retorno por defecto en caso de estructura inválida o vacía
+                return None, None
+
+            except requests.exceptions.HTTPError as err_http:
+                print(f"Error HTTP: {err_http}")
+                print(f"Cuerpo de la respuesta: {response.text}")
+                return None
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                print(f"Error general de ejecución (intento {attempt + 1}/2): {e}")
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+            except Exception as e:
+                print(f"Error general de ejecución: {e}")
+                return None
+
+        print(f"Error general de ejecución tras reintentos: {last_error}")
+        return None
     
 
     def get_financials(self, asset: str, tid: int, cid: int, with_actual_year_included: int):
@@ -142,6 +167,15 @@ class TIKR:
             cached = get_financials_from_db(asset)
             print(f'[ + ] Using cached data from DB for {asset}')
             self.content = cached
+            years = set()
+            for rows in cached.values():
+                for row in rows:
+                    if row.get('year'):
+                        years.add(row['year'])
+            self.period_end_dates = {year: datetime(year, 12, 31) for year in years}
+            self.statements_config = [
+                {'statement': s['statement'], 'keys': s['keys']} for s in self.statements
+            ]
             return
 
         while True:
@@ -354,6 +388,18 @@ class TIKR:
                         else:
                             fiscalyear[column] = ''
 
+        # The LTM period shares its calendar year with the current-year period
+        # (e.g. both are 2026), and the DB cache is keyed by (company, year), so
+        # persisting both would collapse one into the other and the cached data
+        # would lose the current-year column. Store the LTM row under a sentinel
+        # year so both survive the cache round trip; the exporters already
+        # relabel the last row as 'LTM'.
+        for statement in self.statements:
+            statement_name = statement['statement']
+            rows = self.content.get(statement_name, [])
+            if rows:
+                rows[-1]['year'] = LTM_YEAR_SENTINEL
+
         # Almacena los datos en la DB
         self.export(asset, 'db')
 
@@ -508,7 +554,7 @@ class TIKR:
 
                 if not rows:
                     print(f'[ - ] No data found for statement: {statement_name}')
-                    return
+                    continue
 
                 columns = []
                 # Map columns using statements_config if available
@@ -555,8 +601,10 @@ class TIKR:
                                 december_date = '12/31/' + str(y-2000)
                                 period_str = december_date
                             else:
-                                end_period_date = self.period_end_dates.get(y, str(y))
-                                period_str = end_period_date.strftime('%Y/%m/%d')
+                                end_period_date = self.period_end_dates.get(y)
+                                if end_period_date is None:
+                                    end_period_date = datetime(y, 12, 31)
+                                period_str = end_period_date.strftime('%d/%m/%Y')
                             formatted_years.append(period_str)
                     years = formatted_years
 
@@ -582,4 +630,6 @@ class TIKR:
                 print(f'[ + ] Edited Excel file saved: {filepath}')
 
         except Exception as e:
-            print(f'[ - ] Error editing Excel file: {e}')
+            traceback.print_exc()
+            print(f'[ - ] Error editing Excel file: {e}', file=sys.stderr)
+            raise

@@ -60,6 +60,7 @@ COPY requirements.txt .
 COPY tikr/ tikr/
 COPY plantillas/ plantillas/
 COPY server.py .
+COPY token_manager.py .
 COPY keys.py .
 
 # Alembic + migrations (los modelos viven en database/)
@@ -73,5 +74,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Exponemos el puerto 5555
 EXPOSE 5050
 
-# Comando para iniciar el servidor Flask
-CMD ["python", "-u", "-m", "server"]
+# Comando para iniciar el gestor de token en background y el servidor Flask en primer plano
+CMD ["sh", "-c", "python -u token_manager.py & exec python -u -m server"]
